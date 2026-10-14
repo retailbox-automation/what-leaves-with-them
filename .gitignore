@@ -1,0 +1,9 @@
+.env
+.env.*
+*.key
+*.pem
+__pycache__/
+.venv/
+.pytest_cache/
+data/corpus/
+.DS_Store
