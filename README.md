@@ -23,7 +23,7 @@ Every answer comes with the graph path back to its source.
 | Graph data model | sketch, `docs/design-sketch.md` |
 | Write gate | not built yet |
 | Search API / MCP server | not built yet |
-| Synthetic corpus generator | not built yet |
+| Synthetic corpus generator | built, `python -m honest_memory.corpus --seed 42 --out data/corpus`, see `data/MANIFEST.md` |
 | Benchmark vs plain RAG | not built yet |
 
 ## Data
