@@ -255,10 +255,10 @@ def lone(store, person: str, t: int, ended: list[str]) -> list[dict]:
     rows = []
     for did, title, authors, eps in store.ro(_LONE_DECISIONS, {"person": person, "t": t,
                                                                "replaced": replaced_by(store, t)}):
-        rows.append({"item": did, "item_kind": "decision", "title": title, "relation": "DECIDED",
+        rows.append({"kind": "checked", "item": did, "item_kind": "decision", "title": title, "relation": "DECIDED",
                      "single_source": sorted(authors) == [person], "authors": sorted(authors), "episodes": sorted(eps)})
     for name, kind, rels, authors, eps in store.ro(_LONE_SYSTEMS, {"person": person, "t": t, "ended": ended}):
-        rows.append({"item": name, "item_kind": "system", "system_kind": kind or "service",
+        rows.append({"kind": "checked", "item": name, "item_kind": "system", "system_kind": kind or "service",
                      "relation": "OWNS" if "OWNS" in rels else "WORKED_ON",
                      "single_source": sorted(authors) == [person], "authors": sorted(authors), "episodes": sorted(eps)})
     return sorted(rows, key=lambda r: (not r["single_source"], r["item_kind"] != "decision", r["item"]))
@@ -350,7 +350,7 @@ def islands_without(store, person: str) -> dict:
             components.setdefault(comp, []).append((label, key))
     wall_ms = round((time.perf_counter() - t0) * 1000, 1)
     touched: dict[str, list[dict]] = {}
-    for rel, label, item, src, count, state in mine:
+    for rel, label, item, src, count, state in sorted(mine, key=lambda r: (r[2], r[0], r[5])):
         touched.setdefault(item, []).append({"relation": rel, "item": item, "item_kind": label.lower(), "state": state,
                                              "count": count or None, "source_ids": src or []})
     islands, before = [], []
