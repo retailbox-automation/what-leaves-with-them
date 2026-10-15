@@ -27,6 +27,9 @@ from .gate import GateResult, submit_fact, submit_handoff
 from .store import Store, connect, epoch
 
 MENTIONED = ("Person", "Team", "System", "Decision", "Project")
+# Clock skew we put up with. A document dated further ahead would win every later "newer than the current fact" test
+# and freeze the facts it names until the real clock caught up.
+MAX_FUTURE_SECONDS = 3600
 
 
 def _hydrate(store: Store, extractor: RuleExtractor) -> None:
@@ -39,7 +42,10 @@ def _hydrate(store: Store, extractor: RuleExtractor) -> None:
 
 
 def ingest_episode(store: Store, episode: dict, extractor: RuleExtractor) -> list[GateResult]:
-    """Store one episode and everything it links to, run its candidates through the gate, return the results."""
+    """Store one episode and everything it links to, run its candidates through the gate, return the results.
+    Raises ValueError, writing nothing, for an episode dated more than an hour ahead of the clock."""
+    if epoch(episode["ts"]) > time.time() + MAX_FUTURE_SECONDS:
+        raise ValueError(f"episode {episode['id']} is dated {episode['ts']}, more than an hour in the future")
     _hydrate(store, extractor)
     store.merge_entity("Episode", episode["id"], {
         "ts": epoch(episode["ts"]), "channel": episode["channel"], "author": episode["author"],

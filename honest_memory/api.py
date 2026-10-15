@@ -229,7 +229,10 @@ def create_app(db=None, *, rate_limit: int | None = None, web_dir: str | Path | 
             from . import ingest
         except ImportError as exc:
             raise T.GateUnavailable("ingest needs honest_memory.ingest, which is not installed") from exc
-        result = ingest.ingest_episode(store, body.model_dump(), T.get_extractor())
+        try:
+            result = ingest.ingest_episode(store, body.model_dump(), T.get_extractor())
+        except ValueError as exc:  # an episode dated in the future, or a time that does not exist
+            raise HTTPException(422, str(exc)) from exc
         return {"tenant": tenant, "episode": body.id, "result": _jsonable(result)}
 
     folder = Path(web_dir or os.environ.get("HM_WEB_DIR") or Path(__file__).resolve().parent.parent / "web")
