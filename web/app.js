@@ -169,9 +169,9 @@
 
   function planRegions() {
     PORTRAIT = innerWidth <= 760 && innerHeight > innerWidth;
-    [W, H] = PORTRAIT ? [1000, 1800] : [2000, 830];
-    const MX = PORTRAIT ? 24 : 150, MY = PORTRAIT ? 150 : 4;
-    const GX = PORTRAIT ? 90 : 170, GY = PORTRAIT ? 160 : 96;
+    [W, H] = PORTRAIT ? [1000, 1640] : [2000, 830];
+    const MX = PORTRAIT ? 24 : 150, MY = PORTRAIT ? 10 : 4;
+    const GX = PORTRAIT ? 90 : 170, GY = PORTRAIT ? 250 : 96;
     const L = MX, R = W - MX, T = MY, B = H - MY;
     const mid = (L + R) / 2, split = (T + B) / 2;
     const rects = [
@@ -183,7 +183,7 @@
       const [x0, y0, x1, y1] = rects[i];
       regions.set(t, { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, col: i % 2, row: i >> 1 });
     });
-    regions.set('', { cx: mid, cy: split, mx: MX, my: MY });
+    regions.set('', { cx: mid, cy: split, mx: MX, my: MY, gy: GY });
   }
 
   // Where a node belongs: in its team's zone, or between two zones when it is a decision that governs a system of
@@ -332,13 +332,13 @@
       { selector: 'node[kind = "decision"]', style: { shape: 'round-diamond', width: 56, height: 56, 'underlay-shape': 'ellipse' } },
       { selector: 'node[kind = "project"]', style: { shape: 'round-hexagon', width: 32, height: 32, 'underlay-shape': 'ellipse' } },
       { selector: 'node[dim = 1]', style: { 'border-style': 'dashed' } },
-      { selector: 'node.soft', style: { opacity: 0.5 } },
+      { selector: 'node.soft', style: { opacity: 0.72 } },
       { selector: 'node.faded', style: { opacity: 0.2 } },
       { selector: 'node.under', style: { opacity: 0.03, events: 'no' } },
       { selector: 'node.quiet', style: { opacity: 0, events: 'no' } },
       { selector: 'node.tail', style: { ...shown, opacity: 0.6, 'border-color': C.blue, 'border-opacity': 0.8, 'border-width': 2 } },
-      { selector: 'node.lit', style: { ...shown, 'border-color': C.blue, 'border-opacity': 1, 'border-width': 2.6, 'background-color': '#0d2643',
-        'underlay-color': C.blue, 'underlay-opacity': 0.2, 'underlay-padding': 11, color: '#d6e9f8' } },
+      { selector: 'node.lit', style: { ...shown, 'border-color': '#5aaee6', 'border-opacity': 1, 'border-width': 2.8, 'background-color': '#103558',
+        'underlay-color': C.blue, 'underlay-opacity': 0.26, 'underlay-padding': 12, color: '#d6e9f8' } },
       { selector: 'node.pick', style: { ...shown, width: 64, height: 64, 'border-color': '#7cc4f2', 'border-width': 3, 'background-color': '#0f2c4f',
         'underlay-color': C.blue, 'underlay-opacity': 0.34, 'underlay-padding': 15, color: '#ffffff', 'font-size': 17 } },
       { selector: 'node.ghost', style: { ...shown, 'background-opacity': 0, 'border-style': 'dashed', 'border-color': '#9aa4bd',
@@ -357,7 +357,7 @@
         'transition-property': T + ', source-distance-from-node, target-distance-from-node', 'transition-duration': ms(300),
       } },
       { selector: 'edge[base = 1]', style: { opacity: 0.17, events: 'yes' } },
-      { selector: 'edge[base = 1].soft', style: { opacity: 0.09 } },
+      { selector: 'edge[base = 1].soft', style: { opacity: 0.13 } },
       { selector: 'edge[base = 1].faded', style: { opacity: 0.035, events: 'no' } },
       { selector: 'edge.snap', style: { 'line-color': C.red, 'line-style': 'dashed', 'line-dash-pattern': [8, 6], width: 2.2,
         opacity: 0.9, events: 'yes', 'z-index': 10 } },
@@ -403,7 +403,7 @@
   function freeRect() {
     const w = innerWidth, h = innerHeight;
     const narrow = w <= 760;
-    const top = narrow ? 110 : Math.max(96, h * 0.115);
+    const top = narrow ? (['removing', 'removed', 'done'].includes(state.phase) ? 178 : 110) : Math.max(96, h * 0.115);
     let bottom = narrow ? h - 120 : h - Math.max(120, h * 0.16);
     let right = w - 16;
     if (state.phase === 'game') {
@@ -413,12 +413,12 @@
   }
 
   function fit(animate, focus) {
-    // the whole drawing (zones and the free margins), or (in the game) the part around the people and items in play
+    // the whole drawing (zones and the free margins), or (in the game) the part round the points in play
     let b = { ...extent };
     let full = null;
     if (focus && focus.length) {
-      const pts = focus.flatMap((id) => [model.home.get(id), cy.getElementById(id).length ? cy.getElementById(id).position() : null]).filter(Boolean);
-      const m = 120;
+      const pts = focus;
+      const m = 130;
       b = { x0: Math.min(...pts.map((p) => p.x)) - m, x1: Math.max(...pts.map((p) => p.x)) + m,
         y0: Math.min(...pts.map((p) => p.y)) - m, y1: Math.max(...pts.map((p) => p.y)) + m - 10 };
       full = extent;
@@ -500,9 +500,9 @@
       path.setAttribute('transform', tf);
       const lit = g.classList.contains('lit'), hint = g.classList.contains('reached'), red = g.classList.contains('red');
       path.setAttribute('fill', color);
-      path.setAttribute('fill-opacity', lit ? '0.15' : '0.075');
+      path.setAttribute('fill-opacity', lit ? '0.17' : '0.085');
       path.setAttribute('stroke', red ? C.red : lit || hint ? C.blue : color);
-      path.setAttribute('stroke-opacity', red ? '0.75' : lit ? '0.6' : hint ? '0.42' : '0.26');
+      path.setAttribute('stroke-opacity', red ? '0.75' : lit ? '0.65' : hint ? '0.42' : '0.3');
       text.setAttribute('x', (pan.x + z * r.label.x).toFixed(1));
       text.setAttribute('y', (pan.y + z * r.label.y + 6).toFixed(1));
       text.setAttribute('text-anchor', r.label.anchor);
@@ -1078,7 +1078,7 @@
     const singleDecisions = singles.filter((r) => r.item_kind === 'decision');
     const onlyLinks = (br.rows || []).filter((r) => r.kind === 'only_link' && r.person === person).map((r) => r.teams);
     const summary = (wo.rows || []).find((r) => r.kind === 'summary') || {};
-    state.removed = { person, wo, ss, br, islandItems, singles, singleDecisions, onlyLinks, summary };
+    state.removed = { person, wo, ss, br, islandItems, singles, singleDecisions, onlyLinks, summary, drift: new Map() };
 
     setPhase('removed');
     clearClasses();
@@ -1096,6 +1096,7 @@
       n.removeClass('soft').addClass('island drift');
       const to = driftSpot(it.item, taken);
       taken.push(to);
+      state.removed.drift.set(it.item, to);
       moveTo(n, to, { duration: 900, easing: 'ease-out-cubic' });
       const through = it.through.map((c) => `${c.relation}${c.state === 'ended' ? ' (ended)' : ''}${c.count ? `, ${c.count} records` : ''}`).join('; ');
       hoverInfo.set(it.item, `<div class="red">Without ${esc(first(person))}, nobody in the graph is connected to it.</div>`
@@ -1128,12 +1129,13 @@
     counterTips(person);
     $('wall').textContent = summary.wall_ms !== undefined ? `measured ${summary.wall_ms} ms` : '';
     show('headline', false); show('counters', true); show('actions', true);
+    fit(true);  // the same view on a wide screen; on a phone the counters take more room at the top
     $('plan').focus({ preventScroll: true });
     scheduleSync();
   }
 
   function driftSpot(item, taken) {
-    // straight out to the free margin beside its zone (above or below it on a portrait screen), clear of the others
+    // straight out to the free margin beside its zone (into the gap between the rows on a portrait screen)
     const h = model.home.get(item), g = regions.get('');
     if (!PORTRAIT) {
       const x = h.x < W / 2 ? g.mx * 0.56 : W - g.mx * 0.56;
@@ -1143,7 +1145,7 @@
       }
       return { x, y: h.y };
     }
-    const y = h.y < H / 2 ? g.my * 0.5 : H - g.my * 0.5;
+    const y = g.cy + (h.y < g.cy ? -g.gy * 0.42 : g.gy * 0.42);
     for (const dx of [0, 180, -180, 360, -360]) {
       const x = Math.max(90, Math.min(W - 90, h.x + dx));
       if (taken.every((t) => Math.hypot(t.x - x, t.y - y) > 160)) return { x, y };
@@ -1242,10 +1244,37 @@
       const n = cy.getElementById(c.item);
       if (n.length && !n.hasClass('island') && !n.hasClass('single')) n.removeClass('soft faded').addClass('single');
     }
-    state.focus = [person, ...cards.map((c) => c.item)].filter((id) => cy.getElementById(id).length);
+    // as in "Ask before ... leaves": what is in play gathers round the person, the rest of the company steps back
+    const ids = cards.map((c) => c.item).filter((id) => cy.getElementById(id).length);
+    const { centre, spots } = ringAround(person, ids);
+    cy.nodes().forEach((n) => { if (n.id() !== person && !spots.has(n.id())) n.removeClass('soft').addClass('faded'); });
+    if (ids.length) moveTo(cy.getElementById(person), centre);
+    for (const [id, spot] of spots) moveTo(cy.getElementById(id), spot);
+    const taken = [centre, ...spots.values()];
+    cy.nodes('.faded').forEach((n) => {
+      const h = n.position();
+      if (taken.some((t) => Math.hypot(t.x - h.x, t.y - h.y) < 84)) n.addClass('under');
+    });
+    state.focus = taken;
     fit(true, state.focus);
     scheduleSync();
     if (!cards.length) { await sleep(ms(900)); if (state.game && state.game.person === person) finish(); }
+  }
+
+  // a ring (an ellipse on a wide screen) round the person: up to six items on the arc that faces the cards (the line
+  // from a card to its item then never crosses the ring), more all round
+  function ringAround(person, ids) {
+    const home = model.home.get(person), n = ids.length;
+    const rx = PORTRAIT ? 230 : 270, ry = PORTRAIT ? 260 : 196;
+    const centre = { x: Math.max(extent.x0 + rx + 90, Math.min(extent.x1 - rx - 90, home.x)),
+      y: Math.max(extent.y0 + ry + 50, Math.min(extent.y1 - ry - 50, home.y)) };
+    const spots = new Map();
+    ids.forEach((id, i) => {
+      const arc = n <= 2 ? (2 * Math.PI) / 3 : n <= 6 ? (11 * Math.PI) / 9 : 2 * Math.PI;
+      const a = n === 1 ? 0 : n <= 6 ? -arc / 2 + (i * arc) / (n - 1) : -Math.PI / 2 + (i * 2 * Math.PI) / n;
+      spots.set(id, { x: centre.x + Math.cos(a) * rx, y: centre.y + Math.sin(a) * ry });
+    });
+    return { centre, spots };
   }
 
   function renderGame() {
@@ -1377,12 +1406,17 @@
     }
     show('counters', true);
     cy.edges('.snap').addClass('after');
+    cy.nodes('.under').removeClass('under');
+    cy.nodes('.faded').removeClass('faded').addClass('soft');
 
-    for (const it of r.islandItems) {
-      if (!g.resolved.has(it.item)) continue;
-      const n = cy.getElementById(it.item);
-      n.removeClass('island drift').addClass('saved');
-      moveTo(n, model.home.get(it.item), { duration: 800 });
+    // the items in play go back: what was handed over to its place, what still rests on the person to its margin
+    moveTo(cy.getElementById(g.person), model.home.get(g.person));
+    for (const c of g.cards) {
+      const n = cy.getElementById(c.item);
+      if (!n.length) continue;
+      const resolved = g.resolved.has(c.item);
+      if (resolved && n.hasClass('island')) n.removeClass('island drift').addClass('saved');
+      moveTo(n, resolved ? model.home.get(c.item) : r.drift.get(c.item) || model.home.get(c.item), { duration: 800 });
     }
     // who takes what: the person who confirmed in writing, else the plan's first candidate (a proposal)
     const lines = new Map(((g.plan.rows || []).filter((x) => x.kind === 'line')).map((x) => [x.item, x]));
