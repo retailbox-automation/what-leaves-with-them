@@ -23,9 +23,11 @@ from .store import Store
 
 LABELS = ("Person", "Team", "System", "Decision", "Project")
 EDGE_TYPES = tuple(PREDICATES)  # OWNS, MEMBER_OF, LEADS, WORKED_ON, DECIDED, SUPERSEDES, DEPENDS_ON (+ CONSTRAINS)
-# Node properties the panel shows on hover; anything else stays in the graph.
-SHOWN = {"Person": ("notice_at", "last_day", "notice_source"), "Team": (), "System": ("kind", "purpose"),
-         "Decision": ("title", "status"), "Project": ("goal",)}
+# Node properties the panel shows on hover, and the name each gets in the answer (a System's `kind`, integration
+# or runbook, must not overwrite the node kind); anything else stays in the graph.
+SHOWN = {"Person": {"notice_at": "notice_at", "last_day": "last_day", "notice_source": "notice_source"}, "Team": {},
+         "System": {"kind": "system_kind", "purpose": "purpose"}, "Decision": {"title": "title", "status": "status"},
+         "Project": {"goal": "goal"}}
 
 NODES = " UNION ALL ".join(
     f"MATCH (n:{label}) RETURN '{label}' AS label, n.{ENTITY_KEYS[label]} AS key, properties(n) AS props"
@@ -93,9 +95,9 @@ def company_graph(store: Store, as_of=None) -> dict:
         if key is None:
             continue
         node = {"id": key, "label": key, "kind": label.lower(), "team": None}
-        for name in SHOWN[label]:
-            if props.get(name) is not None:
-                node[name] = iso_ts(props[name]) if name == "notice_at" else props[name]
+        for prop, name in SHOWN[label].items():
+            if props.get(prop) is not None:
+                node[name] = iso_ts(props[prop]) if prop == "notice_at" else props[prop]
         nodes.setdefault(key, node)  # keys are unique across these labels in this model; the first one wins
 
     if as_of is None:

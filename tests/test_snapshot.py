@@ -25,6 +25,9 @@ def test_present_graph_has_entities_and_current_facts_only(fx_store):
     assert sorted(kinds) == ["decision", "person", "system", "team"]  # no episodes, receipts, agents, records
     assert len(kinds["person"]) == 7 and len(kinds["team"]) == 4 and len(kinds["system"]) == 8
     assert len({n["id"] for n in g["nodes"]}) == len(g["nodes"])
+    fx_store.rw("MATCH (s:System {name: 'webhooks'}) SET s.kind = 'integration'")
+    hook = next(n for n in snapshot.company_graph(fx_store)["nodes"] if n["id"] == "webhooks")
+    assert hook["kind"] == "system" and hook["system_kind"] == "integration"  # the property does not replace the kind
     edges = edge_set(g["edges"])
     assert ("Luca Ostrander", "OWNS", "billing-api") in edges
     assert ("Sana Petrov", "OWNS", "billing-api") not in edges  # closed by ADR-0009: history, not drawn
