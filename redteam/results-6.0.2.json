@@ -2,12 +2,12 @@
  "engine": "6.0.2",
  "port": 6390,
  "label": "results",
- "ran_at": "2026-10-15T20:01:45Z",
- "repo_commit": "3faaee7",
+ "ran_at": "2026-10-15T20:20:57Z",
+ "repo_commit": "ec4c5f7",
  "gate_files_modified": false,
  "score": {
-  "passed": 30,
-  "total": 30
+  "passed": 36,
+  "total": 36
  },
  "controls": [
   {
@@ -58,7 +58,8 @@
        "no_source",
        "conflicts_current"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -72,7 +73,7 @@
      "ABOUT": 2
     }
    },
-   "seconds": 1.26,
+   "seconds": 3.33,
    "got": "REJECT no_source+conflicts_current",
    "pass": true
   },
@@ -92,7 +93,8 @@
       "reasons": [
        "source_not_found"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -106,7 +108,7 @@
      "ABOUT": 2
     }
    },
-   "seconds": 1.37,
+   "seconds": 3.35,
    "got": "REJECT source_not_found",
    "pass": true
   },
@@ -126,7 +128,8 @@
       "reasons": [
        "ungrounded"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -141,7 +144,7 @@
      "CITES": 1
     }
    },
-   "seconds": 1.24,
+   "seconds": 2.93,
    "got": "REJECT ungrounded",
    "pass": true
   },
@@ -161,7 +164,8 @@
       "reasons": [
        "source_after_claim"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -177,7 +181,7 @@
      "CLAIMED_IN": 1
     }
    },
-   "seconds": 1.27,
+   "seconds": 2.02,
    "got": "REJECT source_after_claim",
    "pass": true
   },
@@ -197,7 +201,8 @@
       "reasons": [
        "source_rejected"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -212,7 +217,7 @@
      "CITES": 1
     }
    },
-   "seconds": 0.97,
+   "seconds": 3.39,
    "got": "REJECT source_rejected",
    "pass": true
   },
@@ -232,7 +237,8 @@
       "reasons": [
        "ungrounded"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -247,7 +253,7 @@
      "CITES": 1
     }
    },
-   "seconds": 0.86,
+   "seconds": 2.51,
    "got": "REJECT ungrounded",
    "pass": true
   },
@@ -267,7 +273,8 @@
       "reasons": [
        "older_than_current"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -283,7 +290,7 @@
      "CLAIMED_IN": 1
     }
    },
-   "seconds": 1.04,
+   "seconds": 2.39,
    "got": "REJECT older_than_current",
    "pass": true
   },
@@ -303,7 +310,8 @@
       "reasons": [
        "source_after_claim"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -318,7 +326,7 @@
      "CITES": 1
     }
    },
-   "seconds": 1.14,
+   "seconds": 2.55,
    "got": "REJECT source_after_claim",
    "pass": true
   },
@@ -342,7 +350,8 @@
         ]
        }
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT older_than_current",
@@ -357,7 +366,8 @@
         ]
        }
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -375,7 +385,7 @@
      "WAS": 1
     }
    },
-   "seconds": 1.47,
+   "seconds": 2.68,
    "got": "SUPERSEDE newer_than_current; REJECT older_than_current",
    "pass": true
   },
@@ -395,7 +405,8 @@
       "reasons": [
        "valid_after_source"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "HTTP 422",
@@ -404,7 +415,8 @@
      "raw": {
       "status": 422,
       "json_outcome": null
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -419,7 +431,7 @@
      "CITES": 1
     }
    },
-   "seconds": 1.3,
+   "seconds": 3.34,
    "got": "REJECT valid_after_source; HTTP 422",
    "pass": true
   },
@@ -439,7 +451,8 @@
       "reasons": [
        "closed_fact"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -454,7 +467,7 @@
      "CITES": 1
     }
    },
-   "seconds": 1.31,
+   "seconds": 2.46,
    "got": "REJECT closed_fact",
    "pass": true
   },
@@ -478,7 +491,8 @@
         ]
        }
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -495,7 +509,7 @@
      "MENTIONS": 2
     }
    },
-   "seconds": 1.49,
+   "seconds": 2.18,
    "got": "REJECT superseded_decision",
    "pass": true
   },
@@ -515,7 +529,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -526,7 +541,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -537,7 +553,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -548,7 +565,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -559,7 +577,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -570,7 +589,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -585,7 +605,7 @@
      "CITES": 6
     }
    },
-   "seconds": 1.17,
+   "seconds": 3.64,
    "got": "REJECT pii x6",
    "pass": true
   },
@@ -605,7 +625,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -616,7 +637,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -627,7 +649,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -638,7 +661,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -653,7 +677,7 @@
      "CITES": 4
     }
    },
-   "seconds": 1.18,
+   "seconds": 2.77,
    "got": "REJECT pii x4",
    "pass": true
   },
@@ -673,7 +697,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -684,7 +709,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -695,7 +721,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -706,7 +733,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -717,7 +745,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -732,7 +761,7 @@
      "CITES": 5
     }
    },
-   "seconds": 1.73,
+   "seconds": 2.69,
    "got": "REJECT pii x5",
    "pass": true
   },
@@ -752,7 +781,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -763,7 +793,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -774,7 +805,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -785,7 +817,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -796,7 +829,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -811,7 +845,7 @@
      "CITES": 5
     }
    },
-   "seconds": 3.36,
+   "seconds": 2.97,
    "got": "REJECT pii x5",
    "pass": true
   },
@@ -831,7 +865,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -842,7 +877,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "HTTP 200 refused pii",
@@ -854,7 +890,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -869,7 +906,7 @@
      "CITES": 3
     }
    },
-   "seconds": 2.19,
+   "seconds": 1.68,
    "got": "REJECT pii x2; HTTP 200 refused pii",
    "pass": true
   },
@@ -889,7 +926,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -900,7 +938,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -911,7 +950,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "HTTP 200 refused pii",
@@ -923,7 +963,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT pii",
@@ -934,7 +975,8 @@
       "reasons": [
        "pii"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -949,7 +991,7 @@
      "CITES": 5
     }
    },
-   "seconds": 3.95,
+   "seconds": 2.19,
    "got": "REJECT pii x3; HTTP 200 refused pii; REJECT pii",
    "pass": true
   },
@@ -969,7 +1011,8 @@
       "reasons": [
        "ungrounded"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT ungrounded",
@@ -980,7 +1023,8 @@
       "reasons": [
        "ungrounded"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT unknown_entity",
@@ -995,7 +1039,8 @@
         ]
        }
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "HTTP 200 unknown_entity",
@@ -1004,7 +1049,8 @@
      "raw": {
       "status": 200,
       "json_outcome": "unknown_entity"
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT bad_agent",
@@ -1015,7 +1061,8 @@
       "reasons": [
        "bad_agent"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -1032,7 +1079,7 @@
      "MENTIONS": 1
     }
    },
-   "seconds": 2.96,
+   "seconds": 2.16,
    "got": "REJECT ungrounded x2; REJECT unknown_entity; HTTP 200 unknown_entity; REJECT bad_agent",
    "pass": true
   },
@@ -1052,7 +1099,8 @@
       "reasons": [
        "ungrounded"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT unknown_entity",
@@ -1067,7 +1115,8 @@
         ]
        }
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -1084,7 +1133,7 @@
      "MENTIONS": 1
     }
    },
-   "seconds": 3.5,
+   "seconds": 1.75,
    "got": "REJECT ungrounded; REJECT unknown_entity",
    "pass": true
   },
@@ -1101,7 +1150,8 @@
      "problems": [],
      "raw": {
       "raises": "ValueError"
-     }
+     },
+     "setup": false
     },
     {
      "got": "ValueError",
@@ -1109,7 +1159,8 @@
      "problems": [],
      "raw": {
       "raises": "ValueError"
-     }
+     },
+     "setup": false
     },
     {
      "got": "ValueError",
@@ -1117,7 +1168,8 @@
      "problems": [],
      "raw": {
       "raises": "ValueError"
-     }
+     },
+     "setup": false
     },
     {
      "got": "ValueError",
@@ -1125,7 +1177,8 @@
      "problems": [],
      "raw": {
       "raises": "ValueError"
-     }
+     },
+     "setup": false
     },
     {
      "got": "ValueError",
@@ -1133,7 +1186,8 @@
      "problems": [],
      "raw": {
       "raises": "ValueError"
-     }
+     },
+     "setup": false
     },
     {
      "got": "HTTP 422",
@@ -1142,7 +1196,8 @@
      "raw": {
       "status": 422,
       "json_outcome": null
-     }
+     },
+     "setup": false
     },
     {
      "got": "HTTP 422",
@@ -1151,7 +1206,8 @@
      "raw": {
       "status": 422,
       "json_outcome": null
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -1161,7 +1217,7 @@
     "delta_nodes": {},
     "delta_edges": {}
    },
-   "seconds": 1.67,
+   "seconds": 1.77,
    "got": "ValueError x5; HTTP 422 x2",
    "pass": true
   },
@@ -1181,7 +1237,8 @@
       "reasons": [
        "bad_name"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT bad_name",
@@ -1192,7 +1249,8 @@
       "reasons": [
        "bad_name"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "HTTP 422",
@@ -1201,7 +1259,8 @@
      "raw": {
       "status": 422,
       "json_outcome": null
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -1216,7 +1275,7 @@
      "CITES": 2
     }
    },
-   "seconds": 1.0,
+   "seconds": 1.84,
    "got": "REJECT bad_name x2; HTTP 422",
    "pass": true
   },
@@ -1236,7 +1295,8 @@
       "reasons": [
        "bad_predicate"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT bad_predicate",
@@ -1247,7 +1307,8 @@
       "reasons": [
        "bad_predicate"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT bad_predicate",
@@ -1258,7 +1319,8 @@
       "reasons": [
        "bad_predicate"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT bad_predicate",
@@ -1269,7 +1331,8 @@
       "reasons": [
        "bad_predicate"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT bad_predicate",
@@ -1280,7 +1343,8 @@
       "reasons": [
        "bad_predicate"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT bad_predicate",
@@ -1291,7 +1355,8 @@
       "reasons": [
        "bad_predicate"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT bad_predicate",
@@ -1302,7 +1367,8 @@
       "reasons": [
        "bad_predicate"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -1317,7 +1383,7 @@
      "CITES": 7
     }
    },
-   "seconds": 1.16,
+   "seconds": 1.61,
    "got": "REJECT bad_predicate x7",
    "pass": true
   },
@@ -1337,7 +1403,8 @@
       "reasons": [
        "bad_attrs"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "no candidates",
@@ -1345,7 +1412,8 @@
      "problems": [],
      "raw": {
       "results": []
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT bad_attrs",
@@ -1356,7 +1424,8 @@
       "reasons": [
        "bad_attrs"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -1373,7 +1442,7 @@
      "MENTIONS": 2
     }
    },
-   "seconds": 1.26,
+   "seconds": 2.55,
    "got": "REJECT bad_attrs; no candidates; REJECT bad_attrs",
    "pass": true
   },
@@ -1393,7 +1462,8 @@
       "reasons": [
        "unknown_entity"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -1407,7 +1477,7 @@
      "CITES": 1
     }
    },
-   "seconds": 1.56,
+   "seconds": 2.35,
    "got": "REJECT unknown_entity",
    "pass": true
   },
@@ -1427,7 +1497,8 @@
       "reasons": [
        "no_source"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -1441,7 +1512,7 @@
      "ABOUT": 1
     }
    },
-   "seconds": 1.58,
+   "seconds": 3.08,
    "got": "REJECT no_source",
    "pass": true
   },
@@ -1461,7 +1532,8 @@
       "reasons": [
        "unknown_entity"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT unknown_entity",
@@ -1472,7 +1544,8 @@
       "reasons": [
        "unknown_entity"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT unknown_entity",
@@ -1483,7 +1556,8 @@
       "reasons": [
        "unknown_entity"
       ]
-     }
+     },
+     "setup": false
     },
     {
      "got": "REJECT unknown_entity",
@@ -1494,7 +1568,8 @@
       "reasons": [
        "unknown_entity"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -1508,7 +1583,7 @@
      "CITES": 4
     }
    },
-   "seconds": 1.69,
+   "seconds": 1.4,
    "got": "REJECT unknown_entity x4",
    "pass": true
   },
@@ -1533,7 +1608,8 @@
         ]
        }
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -1550,7 +1626,7 @@
      "MENTIONS": 2
     }
    },
-   "seconds": 1.91,
+   "seconds": 1.48,
    "got": "REJECT no_source+conflicts_current",
    "pass": true
   },
@@ -1570,7 +1646,8 @@
       "reasons": [
        "ungrounded"
       ]
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -1585,7 +1662,7 @@
      "CITES": 1
     }
    },
-   "seconds": 1.85,
+   "seconds": 2.18,
    "got": "REJECT ungrounded",
    "pass": true
   },
@@ -1614,7 +1691,8 @@
        ]
       },
       "receipts": 2
-     }
+     },
+     "setup": false
     }
    ],
    "problems": [],
@@ -1630,8 +1708,449 @@
      "WORKED_ON": 1
     }
    },
-   "seconds": 1.45,
+   "seconds": 2.53,
    "got": "ACCEPT new_fact, then CONFIRM already_current x49, 2 receipt(s)",
+   "pass": true
+  },
+  {
+   "id": "E01",
+   "class": "end of a fact",
+   "name": "ending someone else's fact",
+   "description": "Pavel Hollis owns auth. submit_end(Pavel Hollis, OWNS, auth) citing (1) Oskar Alvarez's real last-day record, which names neither; (2) two planted episodes, one naming only Pavel, one naming only auth; (3) a planted last-day record that names auth and a different person, Lars Thorne.",
+   "expected": "REJECT ungrounded x3",
+   "steps": [
+    {
+     "got": "REJECT ungrounded",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "ungrounded"
+      ]
+     },
+     "setup": false
+    },
+    {
+     "got": "planted HR-X1",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "planted": "HR-X1"
+     },
+     "setup": true
+    },
+    {
+     "got": "planted HR-X2",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "planted": "HR-X2"
+     },
+     "setup": true
+    },
+    {
+     "got": "REJECT ungrounded",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "ungrounded"
+      ]
+     },
+     "setup": false
+    },
+    {
+     "got": "planted HR-X3",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "planted": "HR-X3"
+     },
+     "setup": true
+    },
+    {
+     "got": "REJECT ungrounded",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "ungrounded"
+      ]
+     },
+     "setup": false
+    }
+   ],
+   "problems": [],
+   "graph": {
+    "ok": true,
+    "problems": [],
+    "delta_nodes": {
+     "Episode": 3,
+     "GateDecision": 3
+    },
+    "delta_edges": {
+     "ABOUT": 6,
+     "CITES": 4
+    }
+   },
+   "seconds": 1.97,
+   "got": "REJECT ungrounded x3",
+   "pass": true
+  },
+  {
+   "id": "E02",
+   "class": "end of a fact",
+   "name": "ending a fact with the document that asserts it",
+   "description": "The runbook, the catalog and the roster say that Pavel Hollis owns auth, Priya Farrow owns admin-console and Selma Marsh is in Platform. None says the fact ended. Each is cited as the source of an end.",
+   "expected": "REJECT ungrounded x3",
+   "steps": [
+    {
+     "got": "REJECT ungrounded",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "ungrounded"
+      ]
+     },
+     "setup": false
+    },
+    {
+     "got": "REJECT ungrounded",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "ungrounded"
+      ]
+     },
+     "setup": false
+    },
+    {
+     "got": "REJECT ungrounded",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "ungrounded"
+      ]
+     },
+     "setup": false
+    }
+   ],
+   "problems": [],
+   "graph": {
+    "ok": true,
+    "problems": [],
+    "delta_nodes": {
+     "GateDecision": 3
+    },
+    "delta_edges": {
+     "ABOUT": 6,
+     "CITES": 3
+    }
+   },
+   "seconds": 2.54,
+   "got": "REJECT ungrounded x3",
+   "pass": true
+  },
+  {
+   "id": "E03",
+   "class": "end of a fact",
+   "name": "backdated end",
+   "description": "A real last-day record dated 2026-10-12 ends Priya Farrow's ownership of admin-console (owned since 2026-08-17). (1) the end dated 2026-07-01, before the fact began; (2) the end dated 2026-09-01, six weeks before the record, which would rewrite who owned admin-console in September; (3) the end dated as the record: accepted, so the refusals are not blanket.",
+   "expected": "REJECT older_than_current; REJECT end_before_source; CLOSE ended",
+   "steps": [
+    {
+     "got": "planted HR-X4",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "planted": "HR-X4"
+     },
+     "setup": true
+    },
+    {
+     "got": "REJECT older_than_current",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "older_than_current"
+      ]
+     },
+     "setup": false
+    },
+    {
+     "got": "REJECT end_before_source",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "end_before_source"
+      ]
+     },
+     "setup": false
+    },
+    {
+     "got": "CLOSE ended",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "CLOSE",
+      "reasons": [
+       "ended"
+      ]
+     },
+     "setup": false
+    }
+   ],
+   "problems": [],
+   "graph": {
+    "ok": true,
+    "problems": [],
+    "delta_nodes": {
+     "Episode": 1,
+     "GateDecision": 3
+    },
+    "delta_edges": {
+     "ABOUT": 6,
+     "CITES": 3,
+     "OWNS": -1,
+     "WAS": 1
+    }
+   },
+   "seconds": 1.9,
+   "got": "REJECT older_than_current; REJECT end_before_source; CLOSE ended",
+   "pass": true
+  },
+  {
+   "id": "E04",
+   "class": "end of a fact",
+   "name": "ending a fact that is already ended or never existed",
+   "description": "Oskar Alvarez's ownership of fernhill-sso was ended by DOC-16 on 2026-10-09. (1) the same end again; (2) the original claim replayed as a fresh fact; (3) an end for a fact that never existed (Luca Ostrander leaving the Growth team) backed by a planted record that says so.",
+   "expected": "REJECT already_ended x2; REJECT not_current",
+   "steps": [
+    {
+     "got": "REJECT already_ended",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "already_ended"
+      ]
+     },
+     "setup": false
+    },
+    {
+     "got": "REJECT already_ended",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "already_ended"
+      ]
+     },
+     "setup": false
+    },
+    {
+     "got": "planted HR-X5",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "planted": "HR-X5"
+     },
+     "setup": true
+    },
+    {
+     "got": "REJECT not_current",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "not_current"
+      ]
+     },
+     "setup": false
+    }
+   ],
+   "problems": [],
+   "graph": {
+    "ok": true,
+    "problems": [],
+    "delta_nodes": {
+     "Episode": 1,
+     "GateDecision": 3
+    },
+    "delta_edges": {
+     "ABOUT": 6,
+     "CITES": 3
+    }
+   },
+   "seconds": 1.62,
+   "got": "REJECT already_ended x2; REJECT not_current",
+   "pass": true
+  },
+  {
+   "id": "E05",
+   "class": "end of a fact",
+   "name": "end dated in the future",
+   "description": "Priya Farrow's last-day record is dated 2026-10-12. (1) the end dated 2030-01-01; (2) the end dated one day after the record; (3) a last-day record dated 2030 posted through the HTTP API.",
+   "expected": "REJECT valid_after_source x2; HTTP 422",
+   "steps": [
+    {
+     "got": "planted HR-X4",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "planted": "HR-X4"
+     },
+     "setup": true
+    },
+    {
+     "got": "REJECT valid_after_source",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "valid_after_source"
+      ]
+     },
+     "setup": false
+    },
+    {
+     "got": "REJECT valid_after_source",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "valid_after_source"
+      ]
+     },
+     "setup": false
+    },
+    {
+     "got": "HTTP 422",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "status": 422,
+      "json_outcome": null
+     },
+     "setup": false
+    }
+   ],
+   "problems": [],
+   "graph": {
+    "ok": true,
+    "problems": [],
+    "delta_nodes": {
+     "Episode": 1,
+     "GateDecision": 2
+    },
+    "delta_edges": {
+     "ABOUT": 4,
+     "CITES": 2
+    }
+   },
+   "seconds": 1.84,
+   "got": "REJECT valid_after_source x2; HTTP 422",
+   "pass": true
+  },
+  {
+   "id": "E06",
+   "class": "end of a fact",
+   "name": "forged last-day record",
+   "description": "(1) a planted record titled 'Last day: Pavel Hollis' whose only line is about Lars Thorne, cited to end Pavel's ownership of auth; (2) a record posted through the HTTP API titled 'Last day: Pavel Hollis' that says 'he' and never names him: the extractor reads the subject as He and the gate must refuse it as an unknown entity; (3) a record posted the same way for a person the graph does not know.",
+   "expected": "REJECT ungrounded; REJECT unknown_entity x2",
+   "steps": [
+    {
+     "got": "planted HR-X7",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "planted": "HR-X7"
+     },
+     "setup": true
+    },
+    {
+     "got": "REJECT ungrounded",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "outcome": "REJECT",
+      "reasons": [
+       "ungrounded"
+      ]
+     },
+     "setup": false
+    },
+    {
+     "got": "REJECT unknown_entity",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "status": 200,
+      "json_outcome": null,
+      "results": [
+       {
+        "outcome": "REJECT",
+        "reasons": [
+         "unknown_entity"
+        ]
+       }
+      ]
+     },
+     "setup": false
+    },
+    {
+     "got": "REJECT unknown_entity",
+     "ok": true,
+     "problems": [],
+     "raw": {
+      "status": 200,
+      "json_outcome": null,
+      "results": [
+       {
+        "outcome": "REJECT",
+        "reasons": [
+         "unknown_entity"
+        ]
+       }
+      ]
+     },
+     "setup": false
+    }
+   ],
+   "problems": [],
+   "graph": {
+    "ok": true,
+    "problems": [],
+    "delta_nodes": {
+     "Episode": 3,
+     "GateDecision": 3
+    },
+    "delta_edges": {
+     "ABOUT": 4,
+     "CITES": 3,
+     "MENTIONS": 3
+    }
+   },
+   "seconds": 1.83,
+   "got": "REJECT ungrounded; REJECT unknown_entity x2",
    "pass": true
   }
  ]
