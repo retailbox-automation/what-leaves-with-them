@@ -97,7 +97,9 @@ def test_end_of_an_unknown_entity_is_refused(store):
 
 
 def test_nothing_to_end_is_refused(store):
-    res = end(store, subject="Bo", sources=("ADR-0009",))  # names Bo and billing-api, but Bo owns nothing
+    store.merge_entity("Episode", "DOC-24", {"ts": epoch(LAST_DAY), "channel": "doc", "author": "Cy", "title": "",
+                                             "text": "Bo no longer owns billing-api."})  # a proper end record, but Bo owns nothing
+    res = end(store, subject="Bo", sources=("DOC-24",))
     assert (res.outcome, res.reasons) == ("REJECT", ["not_current"])
 
 

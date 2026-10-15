@@ -78,8 +78,11 @@ Input: a candidate `{subject, predicate, object, valid_at, source_ids, proposer}
 
 **Ending a fact (CLOSE).** `submit_end(store, subject, predicate, object, sources, at)` ends a current fact
 without a replacement, for a person's last day. Checks 1-6 run unchanged (source exists, mentions both names, no
-personal data, known entities); then the fact must be current (else REJECT `not_current`, or `already_ended` when
-history holds it) and `at` must come after the fact began (else REJECT `older_than_current`). Outcome CLOSE: the
+personal data, known entities), except that the line naming both ends must also say "no longer" (a document that
+merely asserts the fact is not its end) and a title cannot stand in for the person; then the fact must be current
+(else REJECT `not_current`, or `already_ended` when history holds it), `at` must come after the fact began (else
+REJECT `older_than_current`), and it must be dated at the record that states it: later is REJECT `valid_after_source`,
+more than a day earlier REJECT `end_before_source`. Outcome CLOSE: the
 typed edge moves to `WAS` with `invalid_at = at`, `closed_by` = the receipt id, and the receipt CITES the record.
 Ingest sends every line of a "last day" record (`- X is no longer a member of the T team.`, `- X no longer owns
 S.`, `- X no longer leads P.`) down this path. Afterwards `current_owner` of an orphaned system answers "no current

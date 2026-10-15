@@ -21,10 +21,12 @@ A candidate fact passes the checks of docs/ARCHITECTURE.md in order and the firs
     9 the same fact was ended after the time it claims           -> already_ended (replayed old evidence)
    10 otherwise                                                  -> ACCEPT
 
-submit_end ends a current fact without a replacement (a person's last day). It runs checks 1-6 unchanged, then:
-the fact must be current (else not_current, or already_ended when history holds it) and the end must come after
-the fact began (else older_than_current). Outcome CLOSE: the typed edge moves to WAS with invalid_at = the end
-and closed_by = the receipt.
+submit_end ends a current fact without a replacement (a person's last day). It runs checks 1-6 unchanged, except
+that the line naming both ends must also say "no longer" (or "steps down"; the document that asserts the fact is
+not its end) and a title cannot speak for the person; then: the fact must be current (else not_current, or
+already_ended when history holds it), the end must come after the fact began (else older_than_current), and it must
+be dated at the record that states it, a day earlier at most (valid_after_source / end_before_source). Outcome
+CLOSE: the typed edge moves to WAS with invalid_at = the end and closed_by = the receipt.
 
 Findings and handoffs: the agent id must look like agent:name, personal data is looked for in text, topic, note,
 agent, session and party names, a cited receipt must not be a refusal (source_rejected), and nothing may be dated
@@ -53,6 +55,10 @@ RESERVED = {"valid_at", "invalid_at", "source_ids", "gate_id", "closed_by", "pre
 # The word a source must use, in the same line as both names, to be said to state the relation. No cue: the names alone.
 CUES = {"OWNS": r"\bown", "MEMBER_OF": r"\bteam\b|\bjoin|\bmember", "LEADS": r"\blead", "DECIDED": r"\bauthor\b|\bdecid",
         "SUPERSEDES": r"\bsupersede|\breplace", "DEPENDS_ON": r"\bdepend"}
+# What an end must say, on the line that names both ends: "X no longer owns Y". The document that says X owns Y is
+# the fact, not its end.
+END_CUE = r"\bno longer\b|\bstep(?:s|ped)? down\b"
+END_SLACK = 86400  # an end may be dated up to a day before the record that states it (a record filed late), never after
 # Predicates whose edge carries `count`, the number of distinct sources (work items).
 COUNTED = {"WORKED_ON"}
 REDACTED = "[redacted]"
@@ -247,7 +253,7 @@ class _Verdict:
 
 
 def _common_checks(store: Store, cand: Candidate, episodes: dict, names: _Names,
-                   conflicts_note: bool) -> _Verdict:
+                   conflicts_note: bool, ending: bool = False) -> _Verdict:
     """Checks 1-6, shared by assertions and ends: a refusal, or a verdict-in-waiting carrying the object label."""
     refuse = lambda *reasons: _Verdict(REJECT, list(reasons))
     # 1
@@ -277,7 +283,8 @@ def _common_checks(store: Store, cand: Candidate, episodes: dict, names: _Names,
         return refuse("source_after_claim")  # a claim cannot rest on a document that did not exist when it was read
     # 5
     cue = CUES.get(p.name, "")
-    stating = [s for s in cand.source_ids if episode_states(episodes[s], cue, cand.subject, cand.object)]
+    stating = [s for s in cand.source_ids if episode_states(episodes[s], cue, cand.subject, cand.object,
+                                                            **({"also": END_CUE, "use_title": False} if ending else {}))]
     if not stating:
         return refuse("ungrounded")
     # 6
@@ -317,7 +324,7 @@ def _judge(store: Store, cand: Candidate, episodes: dict, names: _Names) -> _Ver
 
 
 def _judge_end(store: Store, cand: Candidate, episodes: dict, names: _Names) -> _Verdict:
-    first = _common_checks(store, cand, episodes, names, conflicts_note=False)
+    first = _common_checks(store, cand, episodes, names, conflicts_note=False, ending=True)
     if first.outcome == REJECT:
         return first
     p, at, label = PREDICATES[cand.predicate], _stamp(cand.valid_at), first.object_label
@@ -327,6 +334,11 @@ def _judge_end(store: Store, cand: Candidate, episodes: dict, names: _Names) -> 
         return _Verdict(REJECT, ["already_ended" if ended else "not_current"], label)
     if any(at <= f["valid_at"] for f, _ in current):
         return _Verdict(REJECT, ["older_than_current"], label)
+    recorded = max(episodes[s].get("ts", 0) for s in first.sources)
+    if at > recorded:
+        return _Verdict(REJECT, ["valid_after_source"], label)  # nobody has left yet, as far as the record knows
+    if at < recorded - END_SLACK:
+        return _Verdict(REJECT, ["end_before_source"], label)   # backdating an end rewrites who owned what in between
     return _Verdict(CLOSE, ["ended"], label, current)
 
 
