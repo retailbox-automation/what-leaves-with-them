@@ -59,7 +59,7 @@ def render(summary: dict, results: dict[str, list[dict]]) -> str:
         f"- Run: {m['started']} to {m['finished']} UTC ({m['wall_seconds'] / 60:.1f} min), repo commit `{m['commit']}`.",
         f"- Chat model, for plain RAG and for the agent: `{chat['name']}` ({chat.get('parameters', '?')}, "
         f"{chat.get('quantization', '?')}, digest `{chat.get('digest', '?')}`), temperature 0, reasoning_effort `{m['reasoning']}`, via Ollama {m['ollama_version']}.",
-        f"- Embeddings for plain RAG: `{embed['name']}` (digest `{embed.get('digest', '?')}`), top-k {m['k']}.",
+        f"- Embeddings for plain RAG: `{embed['name']}` (digest `{embed.get('digest', '?')}`), top-k {m['k']}, units: {'whole episodes' if m.get('chunk', 'episode') == 'episode' else 'single lines'}.",
         f"- FalkorDB {m['falkordb_version']} on port {m['falkordb_port']}; ingest: {m['ingest']['episodes']} episodes, "
         f"{m['ingest']['gate_calls']} gate decisions in {m['ingest']['seconds']} s "
         f"({', '.join(f'{k} {v}' for k, v in m['ingest']['outcomes'].items())}).", "",

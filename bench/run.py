@@ -123,6 +123,8 @@ def main(argv=None) -> int:
     ap.add_argument("--reasoning", default="none", help="reasoning_effort for every model call: none (thinking off), "
                     "low, medium, high, or default (leave the model's own setting)")
     ap.add_argument("--k", type=int, default=K, help="episodes retrieved per question for plain RAG")
+    ap.add_argument("--chunk", default="episode", choices=("episode", "lines"),
+                    help="plain RAG units: whole episodes (default) or one per line of an episode")
     ap.add_argument("--limit", type=int, help="only the first N questions (smoke test)")
     ap.add_argument("--only", help="only these question ids, comma-separated (smoke test)")
     ap.add_argument("--out", default=str(RESULTS), help="results directory")
@@ -181,7 +183,7 @@ def main(argv=None) -> int:
     ingest: dict = {}
     falkordb = "not used"
     if "plain-rag" in systems:
-        rag = PlainRag(corpus, ollama, args.model, args.embed_model, args.k, reasoning)
+        rag = PlainRag(corpus, ollama, args.model, args.embed_model, args.k, reasoning, args.chunk)
         results["plain-rag"] = run_system("plain-rag", rag.ask, questions, paths["plain-rag"], truth, by_id, args.resume)
     if any(s.startswith("honest") for s in systems):
         from .honest import Honest
@@ -199,7 +201,7 @@ def main(argv=None) -> int:
     models = ollama_models([args.model, args.embed_model])
     meta = {"started": started, "finished": now_utc(), "wall_seconds": round(time.perf_counter() - t0, 1),
             "seed": corpus.seed, "generator_version": corpus.generator_version, "corpus_sha256": corpus.sha256,
-            "questions": len(questions), "k": args.k, "reasoning": args.reasoning, "commit": git_head(), "ollama_version": ollama_version(),
+            "questions": len(questions), "k": args.k, "chunk": args.chunk, "reasoning": args.reasoning, "commit": git_head(), "ollama_version": ollama_version(),
             "models": {"chat": {"name": args.model, **models[args.model]},
                        "embedding": {"name": args.embed_model, **models[args.embed_model]}},
             "falkordb_version": falkordb, "falkordb_port": args.port, "systems": systems,

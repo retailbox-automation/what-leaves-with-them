@@ -59,12 +59,13 @@
     "plain-rag": {
       "overall": {
         "n": 66,
-        "correct": 56.1,
-        "correct_literal": 48.5,
-        "correct_sentence_only": 56.1,
+        "correct": 51.5,
+        "correct_literal": 43.9,
+        "correct_sentence_only": 51.5,
         "stale": 4.5,
         "unsupported": 0.0,
-        "clean": 56.1,
+        "abstained": 31.8,
+        "clean": 51.5,
         "leaked": 2,
         "median_ms": 584
       },
@@ -76,6 +77,7 @@
           "correct_sentence_only": 25.0,
           "stale": 25.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 25.0,
           "leaked": 2,
           "median_ms": 588
@@ -87,6 +89,7 @@
           "correct_sentence_only": 78.3,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 21.7,
           "clean": 78.3,
           "leaked": 0,
           "median_ms": 474
@@ -98,6 +101,7 @@
           "correct_sentence_only": 100.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
           "median_ms": 511
@@ -109,18 +113,20 @@
           "correct_sentence_only": 16.7,
           "stale": 33.3,
           "unsupported": 0.0,
+          "abstained": 33.3,
           "clean": 16.7,
           "leaked": 0,
           "median_ms": 689
         },
         "provenance": {
           "n": 9,
-          "correct": 88.9,
-          "correct_literal": 88.9,
-          "correct_sentence_only": 88.9,
+          "correct": 55.6,
+          "correct_literal": 55.6,
+          "correct_sentence_only": 55.6,
           "stale": 0.0,
           "unsupported": 0.0,
-          "clean": 88.9,
+          "abstained": 22.2,
+          "clean": 55.6,
           "leaked": 0,
           "median_ms": 761
         },
@@ -131,6 +137,7 @@
           "correct_sentence_only": 57.1,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 42.9,
           "clean": 57.1,
           "leaked": 0,
           "median_ms": 748
@@ -142,6 +149,7 @@
           "correct_sentence_only": 66.7,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 16.7,
           "clean": 66.7,
           "leaked": 0,
           "median_ms": 847
@@ -153,6 +161,7 @@
           "correct_sentence_only": 0.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 80.0,
           "clean": 0.0,
           "leaked": 0,
           "median_ms": 489
@@ -166,8 +175,9 @@
         "correct_literal": 90.9,
         "correct_sentence_only": 97.0,
         "stale": 0.0,
-        "unsupported": 3.0,
-        "clean": 97.0,
+        "unsupported": 0.0,
+        "abstained": 0.0,
+        "clean": 100.0,
         "leaked": 0,
         "median_ms": 7
       },
@@ -179,6 +189,7 @@
           "correct_sentence_only": 100.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
           "median_ms": 5
@@ -190,6 +201,7 @@
           "correct_sentence_only": 100.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
           "median_ms": 6
@@ -201,6 +213,7 @@
           "correct_sentence_only": 100.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
           "median_ms": 10
@@ -212,6 +225,7 @@
           "correct_sentence_only": 100.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
           "median_ms": 7
@@ -223,6 +237,7 @@
           "correct_sentence_only": 100.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
           "median_ms": 8
@@ -234,6 +249,7 @@
           "correct_sentence_only": 100.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
           "median_ms": 5
@@ -244,8 +260,9 @@
           "correct_literal": 100.0,
           "correct_sentence_only": 66.7,
           "stale": 0.0,
-          "unsupported": 33.3,
-          "clean": 66.7,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
           "leaked": 0,
           "median_ms": 7
         },
@@ -256,6 +273,7 @@
           "correct_sentence_only": 100.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
           "median_ms": 7
@@ -267,10 +285,11 @@
         "n": 66,
         "correct": 90.9,
         "correct_literal": 72.7,
-        "correct_sentence_only": 86.4,
-        "stale": 1.5,
+        "correct_sentence_only": 84.8,
+        "stale": 0.0,
         "unsupported": 0.0,
-        "clean": 89.4,
+        "abstained": 0.0,
+        "clean": 90.9,
         "leaked": 0,
         "median_ms": 783
       },
@@ -282,6 +301,7 @@
           "correct_sentence_only": 50.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 75.0,
           "leaked": 0,
           "median_ms": 874
@@ -293,6 +313,7 @@
           "correct_sentence_only": 100.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
           "median_ms": 585
@@ -304,6 +325,7 @@
           "correct_sentence_only": 0.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 0.0,
           "leaked": 0,
           "median_ms": 531
@@ -313,9 +335,10 @@
           "correct": 50.0,
           "correct_literal": 16.7,
           "correct_sentence_only": 50.0,
-          "stale": 16.7,
+          "stale": 0.0,
           "unsupported": 0.0,
-          "clean": 33.3,
+          "abstained": 0.0,
+          "clean": 50.0,
           "leaked": 0,
           "median_ms": 1972
         },
@@ -323,9 +346,10 @@
           "n": 9,
           "correct": 88.9,
           "correct_literal": 88.9,
-          "correct_sentence_only": 88.9,
+          "correct_sentence_only": 77.8,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 88.9,
           "leaked": 0,
           "median_ms": 857
@@ -337,6 +361,7 @@
           "correct_sentence_only": 100.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
           "median_ms": 826
@@ -348,6 +373,7 @@
           "correct_sentence_only": 66.7,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
           "median_ms": 1121
@@ -359,6 +385,7 @@
           "correct_sentence_only": 100.0,
           "stale": 0.0,
           "unsupported": 0.0,
+          "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
           "median_ms": 737
