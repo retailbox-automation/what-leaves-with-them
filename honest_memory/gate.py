@@ -82,9 +82,9 @@ class GateResult:
 
 # ---- personal data -------------------------------------------------------------------------------------
 
-_EMAIL = re.compile(  # name@host.tld, or the same spelled "name [at] host [dot] tld"
-    r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
-    r"|[\w.+-]+\s*[\[({]\s*at\s*[\])}]\s*[\w-]+(?:\s*[\[({]?\s*(?:dot|\.)\s*[\])}]?\s*[\w-]+)+", re.IGNORECASE)
+_EMAIL = re.compile(  # name@host.tld, or the same spelled "name [at] host [dot] tld"; starts at the head of a word run so it stays linear
+    r"(?<![\w.+-])(?:[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
+    r"|[\w.+-]+\s*[\[({]\s*at\s*[\])}]\s*[\w-]+(?:\s*[\[({]?\s*(?:dot|\.)\s*[\])}]?\s*[\w-]+)+)", re.IGNORECASE)
 _DATETIME = re.compile(r"\d{4}-\d\d-\d\d(?:[T ]\d\d:\d\d(?::\d\d)?Z?)?|\d\d:\d\d(?::\d\d)?")
 _NUMBER_RUN = re.compile(r"(?<![\w-])\+?\d[\d\s().-]{5,}\d(?![\w-])")
 _CARD_RUN = re.compile(r"(?<![\w-])\d(?:[ -]?\d){12,18}(?![\w-])|(?<![\w-])\d{4}(?:\.\d{4}){3}(?![\w-])")

@@ -187,6 +187,16 @@ def test_ordinary_text_is_not_personal_data(value):
     assert detect_pii(value) == []
 
 
+@pytest.mark.parametrize("filler", ["1", "1.", "a", "a-", "ab ", "a@", "1 "])
+def test_detect_pii_stays_fast_on_long_input(filler):
+    import time
+
+    text = filler * (20000 // len(filler))
+    started = time.perf_counter()
+    detect_pii(text)
+    assert time.perf_counter() - started < 0.25  # the patterns must not backtrack quadratically
+
+
 def test_detect_pii_names_the_kind():
     assert detect_pii("mail ana@example.com") == ["email"]
     assert detect_pii("call +1-555-0159 now") == ["phone"]
