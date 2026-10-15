@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 from .corpus import templates as T
 from .gate import Candidate
-from .names import NameIndex, episode_mentions
+from .names import NameIndex, episode_mentions, is_lookalike
 
 SYSTEM = r"[a-z][a-z0-9-]*"
 
@@ -79,9 +79,13 @@ class RuleExtractor:
         first: dict[tuple[str, str], EntityDecl] = {}
         for d in self._declare(ep) if ep["channel"] == "doc" else ():
             first.setdefault((d.label, d.key), d)
-        decls = list(first.values())
-        for d in decls:
-            self.known.add(d.label, d.key)
+        decls = []
+        for d in first.values():
+            # A name that only looks like a known one is not a new entity: it would be a second "Sana Petrov".
+            # It is still proposed in facts; the gate refuses those as unknown_entity.
+            if not is_lookalike(d.key, self.known.names(d.label)):
+                self.known.add(d.label, d.key)
+                decls.append(d)
         return decls
 
     def _declare(self, ep: dict):

@@ -7,6 +7,7 @@ and "billing-api" is not inside "billing-api-v2".
 from __future__ import annotations
 
 import re
+import unicodedata
 
 
 def _pattern(name: str) -> str:
@@ -41,6 +42,33 @@ def episode_states(episode: dict, cue: str, *names: str) -> bool:
         if all(mentions(f"{line}\n{title}\n{who}", n) for n in names) and (not cue or re.search(cue, f"{line}\n{title}", re.IGNORECASE)):
             return True
     return False
+
+
+# Cyrillic and Greek letters drawn like a Latin one: enough to catch the usual spoofs, not a full confusables table.
+_CONFUSABLE = str.maketrans(dict(zip(
+    "аеорсухіјѕһԁԛԝАВЕКМНОРСТХУІЈЅοινρταΑΒΕΗΙΚΜΝΟΡΤΧΥΖ",
+    "aeopcyxijshdqwABEKMHOPCTXYIJSoivptaABEHIKMNOPTXYZ")))
+_SCRIPTS = ("LATIN", "CYRILLIC", "GREEK")
+
+
+def skeleton(name: str) -> str:
+    """The name as it looks: accents dropped, look-alike letters mapped to Latin, case folded."""
+    plain = "".join(c for c in unicodedata.normalize("NFKD", name) if not unicodedata.combining(c))
+    return plain.translate(_CONFUSABLE).casefold()
+
+
+def mixes_scripts(name: str) -> bool:
+    """True when one word has letters from more than one of Latin, Cyrillic and Greek ("S\u0430na" with a Cyrillic a)."""
+    for word in name.split():
+        scripts = {unicodedata.name(c, "").split(" ", 1)[0] for c in word if c.isalpha()} & set(_SCRIPTS)
+        if len(scripts) > 1:
+            return True
+    return False
+
+
+def is_lookalike(name: str, known) -> bool:
+    """A name that mixes scripts, or that is another known name once spoofed letters, accents and case are ignored."""
+    return mixes_scripts(name) or any(k != name and skeleton(k) == skeleton(name) for k in known)
 
 
 class NameIndex:
