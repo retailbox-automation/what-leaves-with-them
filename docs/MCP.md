@@ -1,6 +1,6 @@
 # Use the memory from Claude Code or Cursor (MCP)
 
-`honest_memory.mcp_server` is an MCP stdio server. It exposes the fixed tool catalogue (`current_owner`, `owner_at`, `history`, `escalation_path`, `impact`, `who_knows`, `decision_trail`, `why`, `what_changed`, `path_between`, `recall`, `facts_about`, `remember`, `handoff`). The model picks a tool and fills arguments; it never writes Cypher, every name is resolved against the graph first, and every answer carries its path.
+`honest_memory.mcp_server` is an MCP stdio server. It exposes the fixed catalogue of 21 tools: `current_owner`, `owner_at`, `history`, `escalation_path`, `impact`, `who_knows`, `decision_trail`, `why`, `what_changed`, `path_between`, `recall`, `facts_about`, `remember`, `handoff`, and the departure tools `what_leaves`, `single_source`, `without`, `bridges`, `successors`, `handoff_plan`, `promises`. The model picks a tool and fills arguments; it never writes Cypher, every name is resolved against the graph first, and every answer carries its path.
 
 ## Set up
 
