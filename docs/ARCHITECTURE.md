@@ -65,21 +65,24 @@ Input: a candidate `{subject, predicate, object, valid_at, source_ids, proposer}
 
 | # | Check | Outcome when it fails |
 |---|---|---|
-| 1 | predicate is in the schema; forbidden predicates (`HAS_PHONE`, `HAS_ADDRESS`, …) | REJECT `bad_predicate` / `pii` |
-| 2 | subject or object looks like personal data (phone, email, street address, card number) | REJECT `pii` |
+| 1 | predicate is in the schema; forbidden predicates (`HAS_PHONE`, `HAS_ADDRESS`, …); time parses; names at most 200 characters | REJECT `bad_predicate` / `pii` / `bad_time` / `bad_name` |
+| 2 | subject, object or attrs look like personal data (phone, email, street address, card number, also dotted or spelled-out forms); attrs only `role`, `title`, `note`, short strings | REJECT `pii` / `bad_attrs` |
 | 3 | at least one source id given | REJECT `no_source` (plus `conflicts_current` when it would contradict the present) |
-| 4 | every source id is an existing Episode | REJECT `source_not_found` |
-| 5 | a cited episode mentions both subject and object by name | REJECT `ungrounded` |
+| 4 | every source id is an existing Episode, and none is newer than the episode the claim was read in | REJECT `source_not_found` / `source_after_claim` |
+| 5 | one line of a cited episode mentions both subject and object by name and, for `OWNS`, `MEMBER_OF`, `LEADS`, `DECIDED`, `SUPERSEDES`, `DEPENDS_ON`, carries the relation's word; the edge keeps only the sources that do | REJECT `ungrounded` |
 | 6 | subject and object resolve to known entities of the right label (new entities only from documents) | REJECT `unknown_entity` |
 | 7 | same fact already current | CONFIRM: source added to the edge |
-| 8 | functional predicate with a different current value: candidate newer → SUPERSEDE (old edge to `WAS`), older → REJECT `older_than_current` | |
+| 8 | functional predicate with a different current value: candidate newer → SUPERSEDE (old edge to `WAS`), older → REJECT `older_than_current`. Before that: a claim dated after all the sources that state it → REJECT `valid_after_source`; a fact that was closed and is asserted again on evidence that is not newer than the closing, or only points at the old document → REJECT `closed_fact`; a superseded decision superseding another → REJECT `superseded_decision` | |
 | 9 | the same fact was ended after the time the candidate speaks of (replayed old evidence) | REJECT `already_ended` |
 | 10 | otherwise | ACCEPT |
 
 **Ending a fact (CLOSE).** `submit_end(store, subject, predicate, object, sources, at)` ends a current fact
 without a replacement, for a person's last day. Checks 1-6 run unchanged (source exists, mentions both names, no
-personal data, known entities); then the fact must be current (else REJECT `not_current`, or `already_ended` when
-history holds it) and `at` must come after the fact began (else REJECT `older_than_current`). Outcome CLOSE: the
+personal data, known entities), except that the line naming both ends must also say "no longer" (a document that
+merely asserts the fact is not its end) and a title cannot stand in for the person; then the fact must be current
+(else REJECT `not_current`, or `already_ended` when history holds it), `at` must come after the fact began (else
+REJECT `older_than_current`), and it must be dated at the record that states it: later is REJECT `valid_after_source`,
+more than a day earlier REJECT `end_before_source`. Outcome CLOSE: the
 typed edge moves to `WAS` with `invalid_at = at`, `closed_by` = the receipt id, and the receipt CITES the record.
 Ingest sends every line of a "last day" record (`- X is no longer a member of the T team.`, `- X no longer owns
 S.`, `- X no longer leads P.`) down this path. Afterwards `current_owner` of an orphaned system answers "no current
@@ -87,6 +90,8 @@ owner; last owner X until D (closed by GD-..., citing DOC-..)" instead of guessi
 
 **Proposed handoffs.** `submit_handoff(..., status="proposed")` writes a Handoff a person still has to approve
 (`handoff_plan` with `propose=true`); nothing is sent anywhere.
+
+Findings and handoffs use the same door: agent ids must look like `agent:name`, personal data is looked for in every text and name they carry, a refused receipt is not a source (`source_rejected`), and a record may not be dated before the sources it cites. An exact repeat of a current fact (same proposer, sources the edge already has) writes no new receipt; it bumps `repeats` on the first one. Episodes dated more than an hour ahead of the clock are refused before anything is stored. The attacks that found these holes, and how each was closed, are in `redteam/REPORT.md`.
 
 The gate is plain code. A model may propose candidates; it never decides what is stored.
 
@@ -132,6 +137,17 @@ Algorithms used only from the set present in both FalkorDB 4.22 (Cloud free) and
 ## Answers
 
 Every answer is one of: `answered_with_path` (rows plus the hops), `answered_from_memory` (a Finding, with the date it was learned), `not_in_graph` (the entity exists, nothing connects the way the question assumed), `unknown_entity` (no such name, no query ran), and for writes `accepted` / `confirmed` / `superseded` / `closed` / `refused` with the receipt. The model writes one sentence from the rows; a check rejects any sentence that names an entity absent from the rows, and the answer falls back to a sentence built from the rows.
+
+## Panel
+
+`web/` is the one-page demo served at `/` (static files, no build step, `web/vendor/` holds cytoscape.js 3.34.3 with its licence). It reads the HTTP API only and never writes. Two read endpoints exist for it, both in `honest_memory/snapshot.py`:
+
+| Endpoint | What | Cypher |
+|---|---|---|
+| `GET /v1/{tenant}/graph` | people, teams, systems, decisions, projects; current facts in `edges`, facts a last-day record ended (WAS closed by a CLOSE receipt) in `ended`, people with a recorded resignation in `leaving`; `?as_of=YYYY-MM-DD` gives the facts in force that day | `NODES`, `CURRENT`, `ENDED`, `AS_OF` in `snapshot.py`; the trace is in the answer |
+| `GET /v1/{tenant}/episodes/{id}` | one source record; a line that looks like personal data is withheld | `MATCH (e:Episode {id: $id}) RETURN …` |
+
+The flow and the tools behind each step: pick a person, `what_leaves(person, depth)` 1–4; Remove, `without(person)`, `single_source(person, as_of = notice day)`, `bridges(top=3)`; Plan the handoff, `handoff_plan(person)` and `promises(person)`; answering a question, the CONFIRM receipts about the item since the notice, the records they cite, and `single_source(person, as_of = the day of those records)`. Show Cypher lists the queries and milliseconds of the last action from each answer's trace. `scripts/capture_panel_fixtures.py` records the same answers into `web/fixtures/`; the page reads them with `?data=fixtures` and falls back to them when the API does not answer.
 
 ## Compatibility
 

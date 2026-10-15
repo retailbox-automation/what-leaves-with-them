@@ -2,21 +2,35 @@
 
 A candidate fact passes the checks of docs/ARCHITECTURE.md in order and the first failing check decides:
 
-    1 predicate in the schema, not forbidden, well-formed time   -> bad_predicate / pii / bad_time
-    2 subject or object looks like personal data                 -> pii
+    1 predicate in the schema, not forbidden, well-formed time,
+      names up to 200 characters                                 -> bad_predicate / pii / bad_time / bad_name
+    2 subject or object looks like personal data; attrs limited
+      to role, title and note as short strings                   -> pii / bad_attrs
     3 at least one source id                                     -> no_source (+ conflicts_current)
-    4 every source id is an existing Episode                     -> source_not_found
-    5 one cited episode names both ends                          -> ungrounded
+    4 every source id is an existing Episode, none newer than
+      the episode the claim was read in                          -> source_not_found / source_after_claim
+    5 one line of a cited episode names both ends, with the
+      relation's word (own, team, lead, depend, ...)             -> ungrounded
     6 both ends are known entities of the right label            -> unknown_entity
-    7 the same fact is already current                           -> CONFIRM (source added)
-    8 functional predicate with another current value            -> SUPERSEDE if newer, else older_than_current
+    7 the same fact is already current                           -> CONFIRM (source added; an exact repeat only
+                                                                    bumps `repeats` on the first receipt)
+    8 functional predicate with another current value            -> SUPERSEDE if newer, else older_than_current;
+      a claim newer than its evidence, a closed fact without new
+      evidence, a superseded decision superseding                -> valid_after_source / closed_fact /
+                                                                    superseded_decision
     9 the same fact was ended after the time it claims           -> already_ended (replayed old evidence)
    10 otherwise                                                  -> ACCEPT
 
-submit_end ends a current fact without a replacement (a person's last day). It runs checks 1-6 unchanged, then:
-the fact must be current (else not_current, or already_ended when history holds it) and the end must come after
-the fact began (else older_than_current). Outcome CLOSE: the typed edge moves to WAS with invalid_at = the end
-and closed_by = the receipt.
+submit_end ends a current fact without a replacement (a person's last day). It runs checks 1-6 unchanged, except
+that the line naming both ends must also say "no longer" (or "steps down"; the document that asserts the fact is
+not its end) and a title cannot speak for the person; then: the fact must be current (else not_current, or
+already_ended when history holds it), the end must come after the fact began (else older_than_current), and it must
+be dated at the record that states it, a day earlier at most (valid_after_source / end_before_source). Outcome
+CLOSE: the typed edge moves to WAS with invalid_at = the end and closed_by = the receipt.
+
+Findings and handoffs: the agent id must look like agent:name, personal data is looked for in text, topic, note,
+agent, session and party names, a cited receipt must not be a refusal (source_rejected), and nothing may be dated
+before the sources it cites (source_after_claim).
 
 Every call, refusals included, writes a GateDecision receipt with CITES edges to the episodes it was given
 and ABOUT edges to the entities it resolved. A receipt never repeats personal data: a refused phone number is
@@ -30,7 +44,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from .names import episode_mentions
+from .names import episode_states
 from .schema import ENTITY_KEYS, FORBIDDEN_PREDICATES, PREDICATES, Predicate
 from .store import Store, epoch
 
@@ -38,11 +52,22 @@ ACCEPT, CONFIRM, SUPERSEDE, REJECT, CLOSE = "ACCEPT", "CONFIRM", "SUPERSEDE", "R
 
 # Edge properties owned by the gate: a candidate's attrs may not overwrite them.
 RESERVED = {"valid_at", "invalid_at", "source_ids", "gate_id", "closed_by", "predicate"}
+# The word a source must use, in the same line as both names, to be said to state the relation. No cue: the names alone.
+CUES = {"OWNS": r"\bown", "MEMBER_OF": r"\bteam\b|\bjoin|\bmember", "LEADS": r"\blead", "DECIDED": r"\bauthor\b|\bdecid",
+        "SUPERSEDES": r"\bsupersede|\breplace", "DEPENDS_ON": r"\bdepend"}
+# What an end must say, on the line that names both ends: "X no longer owns Y". The document that says X owns Y is
+# the fact, not its end.
+END_CUE = r"\bno longer\b|\bstep(?:s|ped)? down\b"
+END_SLACK = 86400  # an end may be dated up to a day before the record that states it (a record filed late), never after
 # Predicates whose edge carries `count`, the number of distinct sources (work items).
 COUNTED = {"WORKED_ON"}
 REDACTED = "[redacted]"
 REDACTED_PII = "[redacted:pii]"
 SNIPPET = 200
+MAX_NAME = 200  # longest subject or object the gate will look at; receipts keep at most SNIPPET characters of a name
+ATTR_KEYS = frozenset({"role", "title", "note"})  # the only extra properties a fact edge may carry, all short strings
+MAX_ATTR = 300
+AGENT_ID = re.compile(r"agent:[a-z0-9][a-z0-9_-]{0,63}")  # the shape the API and the tools accept
 
 
 @dataclass
@@ -69,10 +94,12 @@ class GateResult:
 
 # ---- personal data -------------------------------------------------------------------------------------
 
-_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_EMAIL = re.compile(  # name@host.tld, or the same spelled "name [at] host [dot] tld"; starts at the head of a word run so it stays linear
+    r"(?<![\w.+-])(?:[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
+    r"|[\w.+-]+\s*[\[({]\s*at\s*[\])}]\s*[\w-]+(?:\s*[\[({]?\s*(?:dot|\.)\s*[\])}]?\s*[\w-]+)+)", re.IGNORECASE)
 _DATETIME = re.compile(r"\d{4}-\d\d-\d\d(?:[T ]\d\d:\d\d(?::\d\d)?Z?)?|\d\d:\d\d(?::\d\d)?")
 _NUMBER_RUN = re.compile(r"(?<![\w-])\+?\d[\d\s().-]{5,}\d(?![\w-])")
-_CARD_RUN = re.compile(r"(?<![\w-])\d(?:[ -]?\d){12,18}(?![\w-])")
+_CARD_RUN = re.compile(r"(?<![\w-])\d(?:[ -]?\d){12,18}(?![\w-])|(?<![\w-])\d{4}(?:\.\d{4}){3}(?![\w-])")
 _NANP = re.compile(r"1?[2-9]\d{2}[2-9]\d{6}")
 _STREET = re.compile(
     r"(?<![\w-])\d{1,5}\s+(?:[A-Z][A-Za-z'’-]*\s+){1,3}"
@@ -123,6 +150,12 @@ def _redact(value: str) -> str:
     return f"[redacted:{'+'.join(kinds)}]" if kinds else value
 
 
+def _bad_attrs(attrs: dict) -> bool:
+    """Gate-owned keys are ignored later; any other key must be in ATTR_KEYS with a short string value."""
+    return any(k not in RESERVED and (k not in ATTR_KEYS or not isinstance(v, str) or len(v) > MAX_ATTR)
+               for k, v in attrs.items())
+
+
 def _pii_in(cand: Candidate) -> bool:
     values = [cand.subject, cand.object, *(v for v in cand.attrs.values() if isinstance(v, str))]
     return any(detect_pii(v) for v in values)
@@ -139,6 +172,11 @@ def _stamp(value: str | None) -> int | None:
         return epoch(value)
     except (ValueError, TypeError, AttributeError):
         return None
+
+
+def _repeat_key(cand: Candidate, sources: list[str]) -> str:
+    fields = [cand.subject, cand.predicate, cand.object, sorted(sources), cand.proposer]
+    return hashlib.sha1(json.dumps(fields, ensure_ascii=False).encode("utf-8")).hexdigest()[:20]
 
 
 def _receipt_id(seq: int, *fields) -> str:
@@ -182,6 +220,21 @@ def _conflicts(store: Store, p: Predicate, subject: str, obj: str) -> list[tuple
     return []
 
 
+def _closed_without_news(store: Store, p: Predicate, cand: Candidate, label: str, stating: dict) -> bool:
+    """True when this very fact was closed before and none of the sources that state it again is both newer than the
+    closing and independent of the evidence that held it (a message that merely points at the old document is not)."""
+    sk, ok = ENTITY_KEYS[p.subject], ENTITY_KEYS[label]
+    closed = store.ro(f"MATCH (s:{p.subject} {{{sk}: $s}})-[h:WAS]->(o:{label} {{{ok}: $o}}) WHERE h.predicate = $p "
+                      "RETURN h.invalid_at, h.source_ids", {"s": cand.subject, "o": cand.object, "p": p.name})
+    if not closed:
+        return False
+    closed_at, held_by = max(r[0] for r in closed), [i for r in closed for i in r[1]]
+    fresh = [s for s, ep in stating.items() if ep.get("ts", 0) > closed_at]
+    relays = {r[0] for r in store.ro("MATCH (e:Episode)-[:REFERS_TO]->(r:Episode) WHERE e.id IN $ids AND r.id IN $old "
+                                     "RETURN DISTINCT e.id", {"ids": fresh, "old": held_by})} if fresh else set()
+    return not [s for s in fresh if s not in relays]
+
+
 def _ended(store: Store, p: Predicate, subject: str, obj: str, label: str) -> list[int]:
     """invalid_at of every closed edge (WAS) of this exact fact."""
     sk, ok = ENTITY_KEYS[p.subject], ENTITY_KEYS[label]
@@ -196,10 +249,11 @@ class _Verdict:
     reasons: list[str]
     object_label: str | None = None
     current: list[tuple[dict, str]] = field(default_factory=list)  # CONFIRM: the edge; SUPERSEDE: edges to close
+    sources: list[str] = field(default_factory=list)  # the cited episodes that state the fact; the edge keeps only these
 
 
 def _common_checks(store: Store, cand: Candidate, episodes: dict, names: _Names,
-                   conflicts_note: bool) -> _Verdict | None:
+                   conflicts_note: bool, ending: bool = False) -> _Verdict:
     """Checks 1-6, shared by assertions and ends: a refusal, or a verdict-in-waiting carrying the object label."""
     refuse = lambda *reasons: _Verdict(REJECT, list(reasons))
     # 1
@@ -210,9 +264,13 @@ def _common_checks(store: Store, cand: Candidate, episodes: dict, names: _Names,
         return refuse("bad_predicate")
     if _stamp(cand.valid_at) is None:
         return refuse("bad_time")
+    if len(cand.subject) > MAX_NAME or len(cand.object) > MAX_NAME:
+        return refuse("bad_name")
     # 2
     if _pii_in(cand):
         return refuse("pii")
+    if _bad_attrs(cand.attrs):
+        return refuse("bad_attrs")
     # 3
     if not cand.source_ids:
         conflict = conflicts_note and _conflicts(store, p, cand.subject, cand.object)
@@ -220,40 +278,53 @@ def _common_checks(store: Store, cand: Candidate, episodes: dict, names: _Names,
     # 4
     if any(s not in episodes for s in cand.source_ids):
         return refuse("source_not_found")
+    claim_ts = (episodes.get(cand.claim_episode) or {}).get("ts")
+    if claim_ts is not None and any(episodes[s].get("ts", 0) > claim_ts for s in cand.source_ids):
+        return refuse("source_after_claim")  # a claim cannot rest on a document that did not exist when it was read
     # 5
-    if not any(episode_mentions(episodes[s], cand.subject, cand.object) for s in cand.source_ids):
+    cue = CUES.get(p.name, "")
+    stating = [s for s in cand.source_ids if episode_states(episodes[s], cue, cand.subject, cand.object,
+                                                            **({"also": END_CUE, "use_title": False} if ending else {}))]
+    if not stating:
         return refuse("ungrounded")
     # 6
     object_label = names.label(cand.object, p.object_labels)
     if names.label(cand.subject, [p.subject]) is None or object_label is None:
         return refuse("unknown_entity")
-    return _Verdict("", [], object_label)
+    return _Verdict("", [], object_label, sources=stating)
 
 
 def _judge(store: Store, cand: Candidate, episodes: dict, names: _Names) -> _Verdict:
     first = _common_checks(store, cand, episodes, names, conflicts_note=True)
     if first.outcome == REJECT:
         return first
-    p, valid, object_label = PREDICATES[cand.predicate], _stamp(cand.valid_at), first.object_label
+    refuse = lambda *reasons: _Verdict(REJECT, list(reasons))
+    p, valid, object_label, stating = PREDICATES[cand.predicate], _stamp(cand.valid_at), first.object_label, first.sources
     # 7
     same = [(f, object_label) for f in store.current_facts(p.name, cand.subject, cand.object, object_label=object_label)]
     if same:
-        return _Verdict(CONFIRM, ["already_current"], object_label, same)
+        return _Verdict(CONFIRM, ["already_current"], object_label, same, stating)
     # 8
     conflicts = _conflicts(store, p, cand.subject, cand.object)
     if any(valid <= f["valid_at"] for f, _ in conflicts):
         return _Verdict(REJECT, ["older_than_current"], object_label)
-    if conflicts:
-        return _Verdict(SUPERSEDE, ["newer_than_current"], object_label, conflicts)
     # 9: an end recorded after the time this claim speaks of means the claim is old evidence, not news
     if any(inv > valid for inv in _ended(store, p, cand.subject, cand.object, object_label)):
         return _Verdict(REJECT, ["already_ended"], object_label)
+    if valid > max((episodes[s].get("ts", 0) for s in stating), default=0):
+        return refuse("valid_after_source")  # a claim cannot be newer than the evidence that states it
+    if _closed_without_news(store, p, cand, object_label, {s: episodes[s] for s in stating}):
+        return refuse("closed_fact")
+    if p.name == "SUPERSEDES" and store.ro("MATCH (d:Decision {id: $k}) WHERE d.status = 'superseded' RETURN 1", {"k": cand.subject}):
+        return refuse("superseded_decision")
+    if conflicts:
+        return _Verdict(SUPERSEDE, ["newer_than_current"], object_label, conflicts, stating)
     # 10
-    return _Verdict(ACCEPT, ["new_fact"], object_label)
+    return _Verdict(ACCEPT, ["new_fact"], object_label, sources=stating)
 
 
 def _judge_end(store: Store, cand: Candidate, episodes: dict, names: _Names) -> _Verdict:
-    first = _common_checks(store, cand, episodes, names, conflicts_note=False)
+    first = _common_checks(store, cand, episodes, names, conflicts_note=False, ending=True)
     if first.outcome == REJECT:
         return first
     p, at, label = PREDICATES[cand.predicate], _stamp(cand.valid_at), first.object_label
@@ -263,6 +334,11 @@ def _judge_end(store: Store, cand: Candidate, episodes: dict, names: _Names) -> 
         return _Verdict(REJECT, ["already_ended" if ended else "not_current"], label)
     if any(at <= f["valid_at"] for f, _ in current):
         return _Verdict(REJECT, ["older_than_current"], label)
+    recorded = max(episodes[s].get("ts", 0) for s in first.sources)
+    if at > recorded:
+        return _Verdict(REJECT, ["valid_after_source"], label)  # nobody has left yet, as far as the record knows
+    if at < recorded - END_SLACK:
+        return _Verdict(REJECT, ["end_before_source"], label)   # backdating an end rewrites who owned what in between
     return _Verdict(CLOSE, ["ended"], label, current)
 
 
@@ -313,9 +389,17 @@ def _submit(store: Store, cand: Candidate, at: str | None, judge, apply) -> Gate
     verdict = judge(store, cand, episodes, names)
 
     valid = _stamp(cand.valid_at)
+    repeat = None
+    if verdict.outcome == CONFIRM and all(s in verdict.current[0][0]["source_ids"] for s in verdict.sources):
+        # Nothing new to learn: the same claim, from the same proposer, on sources the edge already has. Count it on
+        # the receipt of the first such repeat instead of writing one more receipt per call.
+        repeat = _repeat_key(cand, verdict.sources)
+        rows = store.rw("MATCH (g:GateDecision {repeat_key: $k}) SET g.repeats = g.repeats + 1 RETURN g.id", {"k": repeat})
+        if rows:
+            return GateResult(CONFIRM, verdict.reasons, rows[0][0], False)
     seq = store.next_sequence("gate")
     forbidden = cand.predicate in FORBIDDEN_PREDICATES
-    subject, obj = _redact(cand.subject), REDACTED if forbidden else _redact(cand.object)
+    subject, obj = _redact(cand.subject)[:SNIPPET], REDACTED if forbidden else _redact(cand.object)[:SNIPPET]
     fields = (subject, cand.predicate, obj, cand.valid_at, ids, cand.proposer, cand.claim_episode)
     receipt_id = _receipt_id(seq, *fields, *(["end"] if judge is _judge_end else []))
 
@@ -335,7 +419,8 @@ def _submit(store: Store, cand: Candidate, at: str | None, judge, apply) -> Gate
         store, receipt_id,
         {"id": receipt_id, "ts": ts, "outcome": verdict.outcome, "reasons": verdict.reasons,
          "predicate": cand.predicate, "subject": subject, "object": obj, "proposer": cand.proposer,
-         "valid_at": valid, "source_ids": ids, "claim_episode": cand.claim_episode},
+         "valid_at": valid, "source_ids": ids, "claim_episode": cand.claim_episode,
+         "repeat_key": repeat, "repeats": 1 if repeat else None},
         {"Episode": [i for i in ids if i in episodes]}, about, claimed)
     return GateResult(verdict.outcome, verdict.reasons, receipt_id, written, closed)
 
@@ -345,7 +430,7 @@ def _apply(store: Store, p: Predicate, cand: Candidate, verdict: _Verdict, label
     closed: list[dict] = []
     if verdict.outcome == CONFIRM:
         edge = verdict.current[0][0]
-        new = [s for s in cand.source_ids if s not in edge["source_ids"]]
+        new = [s for s in verdict.sources if s not in edge["source_ids"]]
         if new:
             store.add_fact_source(p.name, cand.subject, cand.object, new, object_label=label)
             if p.name in COUNTED:
@@ -358,9 +443,9 @@ def _apply(store: Store, p: Predicate, cand: Candidate, verdict: _Verdict, label
         closed.append({"predicate": p.name, "subject": old["subject"], "object": old["object"],
                        "valid_at": old["valid_at"], "invalid_at": valid, "source_ids": old["source_ids"]})
     props = {k: v for k, v in cand.attrs.items() if k not in RESERVED}
-    props.update(valid_at=valid, source_ids=cand.source_ids, gate_id=receipt_id)
+    props.update(valid_at=valid, source_ids=verdict.sources, gate_id=receipt_id)
     if p.name in COUNTED:
-        props["count"] = len(cand.source_ids)
+        props["count"] = len(verdict.sources)
     store.create_fact(p.name, cand.subject, cand.object, props, object_label=label)
     _after_write(store, p, cand)
     return True, closed
@@ -393,7 +478,8 @@ def _refuse_record(store: Store, *, reasons: list[str], agent: str, predicate: s
     receipt_id = _receipt_id(seq, agent, predicate, obj, at, source_ids)
     _write_receipt(store, receipt_id,
                    {"id": receipt_id, "ts": at, "outcome": REJECT, "reasons": reasons, "predicate": predicate,
-                    "subject": agent, "object": obj, "proposer": agent, "valid_at": at, "source_ids": source_ids},
+                    "subject": _redact(agent)[:SNIPPET], "object": obj, "proposer": _redact(agent)[:SNIPPET], "valid_at": at,
+                    "source_ids": source_ids},
                    found, about)
     return GateResult(REJECT, reasons, receipt_id, False)
 
@@ -427,6 +513,11 @@ def _record_checks(store: Store, text: str, source_ids: list[str], at: str) -> t
         return ["no_source"], when, found
     if not _found_ids(found):
         return ["source_not_found"], when, found
+    cited = {label: store.records(label, sids) for label, sids in found.items() if sids}
+    if any(r.get("outcome") == REJECT for r in cited.get("GateDecision", {}).values()):
+        return ["source_rejected"], when, found  # a refusal is a record of what was not believed, not evidence
+    if any(r.get("ts", 0) > when for records in cited.values() for r in records.values()):
+        return ["source_after_claim"], when, found
     return [], when, found
 
 
@@ -435,10 +526,12 @@ def submit_finding(store: Store, agent: str, session: str, text: str, about: lis
     """Keep what an agent concluded, if it is about known entities, rests on a known source and holds no
     personal data. Writes (Agent)-[:WROTE]->(Finding), (Finding)-[:ABOUT]->(entity), (Finding)-[:DERIVED_FROM]->(source)."""
     ids = _dedupe(source_ids)
-    reasons, when, found = _record_checks(store, text, ids, at)
+    reasons, when, found = _record_checks(store, f"{text}\n{agent}\n{session}", ids, at)
     names = _Names(store)
     resolved = [(names.label(n, ENTITY_KEYS), n) for n in about]
     known = [(l, n) for l, n in resolved if l]
+    if not reasons and not AGENT_ID.fullmatch(agent):
+        reasons = ["bad_agent"]
     if not reasons:
         reasons = ["no_about"] if not about else ["unknown_entity"] if len(known) < len(about) else []
     snippet = (REDACTED_PII if "pii" in reasons else text)[:SNIPPET]
@@ -465,11 +558,11 @@ def submit_handoff(store: Store, from_: str, to: str, topic: str, note: str, sou
     Writes a Handoff node with FROM / TO / CITES edges. `status` is "open", or "proposed" for a line of a handoff
     plan that a person still has to approve (nothing is sent anywhere either way)."""
     ids = _dedupe(source_ids)
-    reasons, when, found = _record_checks(store, f"{topic}\n{note}", ids, at)
+    reasons, when, found = _record_checks(store, f"{topic}\n{note}\n{from_}\n{to}", ids, at)
     names = _Names(store)
 
     def party(name: str, order) -> tuple[str, str] | None:
-        label = "Agent" if name.startswith("agent:") else names.label(name, order)
+        label = "Agent" if AGENT_ID.fullmatch(name) else names.label(name, order)
         return (label, name) if label else None
 
     src, dst = party(from_, ("Agent", "Team", "Person")), party(to, ("Agent", "Person", "Team"))

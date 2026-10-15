@@ -79,11 +79,11 @@ ROLE_PREDICATES = ("OWNS", "MEMBER_OF", "LEADS")
 FORBIDDEN_PREDICATES = {"HAS_PHONE", "HAS_ADDRESS", "HAS_EMAIL", "HAS_BIRTHDATE", "HAS_CARD"}
 
 # Range indexes created per tenant graph. Both FalkorDB 4.22 (Cloud free) and 6.0.x accept this form.
-INDEXES = [(label, key) for label, key in {**ENTITY_KEYS, **RECORD_KEYS}.items()]
+INDEXES = [(label, key) for label, key in {**ENTITY_KEYS, **RECORD_KEYS}.items()] + [("GateDecision", "repeat_key")]
 
 
 def graph_name(tenant: str) -> str:
     """One FalkorDB graph per tenant: isolation is a different key, not a WHERE clause."""
-    if not tenant or not all(c.isalnum() or c in "-_" for c in tenant):
-        raise ValueError(f"tenant must be alphanumeric, '-' or '_': {tenant!r}")
+    if not tenant or not tenant.isascii() or not all(c.isalnum() or c in "-_" for c in tenant):
+        raise ValueError(f"tenant must be ASCII letters, digits, '-' or '_': {tenant!r}")
     return f"hm_{tenant}"

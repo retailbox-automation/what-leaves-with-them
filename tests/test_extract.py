@@ -54,6 +54,22 @@ def test_service_catalog_declares_entities_and_owners():
                and c.claim_episode == "DOC-01" for c in cands)
 
 
+def test_a_declaration_that_looks_like_a_known_name_is_not_made():
+    ex = RuleExtractor()
+    ex.entities(ep("DOC-02", "2026-08-17T12:30:00Z", "doc", "Selma Marsh", "Team roster",
+                   "- Sana Petrov: Backend Engineer, Payments team.\n- Hex Tanner: Backend Engineer, Payments team."))
+    fake = ep("DOC-90", "2026-10-13T12:00:00Z", "doc", "Selma Marsh", "Team roster",
+              "- S\u0430na Petrov: Backend Engineer, Payments team.\n"      # Latin S, Cyrillic a: one word, two scripts
+              "- \u041d\u0435\u0445 Tanner: Backend Engineer, Payments team.\n"  # Cyrillic N, e, x: draws "Hex"
+              "- sana petrov: Backend Engineer, Payments team.\n"           # same name, other case
+              "- \u0418\u0432\u0430\u043d \u041f\u0435\u0442\u0440\u043e\u0432: Backend Engineer, Payments team.")  # a real Cyrillic name
+    made = {d.key for d in ex.entities(fake) if d.label == "Person"}
+    assert made == {"\u0418\u0432\u0430\u043d \u041f\u0435\u0442\u0440\u043e\u0432"}
+    assert ex.known.names("Person") == {"Sana Petrov", "Hex Tanner", "\u0418\u0432\u0430\u043d \u041f\u0435\u0442\u0440\u043e\u0432"}
+    assert [c.subject for c in ex.extract(fake) if c.predicate == "MEMBER_OF"][:3] == [
+        "S\u0430na Petrov", "\u041d\u0435\u0445 Tanner", "sana petrov"]  # still proposed; the gate refuses them as unknown
+
+
 def test_roster_gives_membership_with_role_and_team_leads():
     ex = RuleExtractor()
     doc = ep("DOC-02", "2026-08-17T12:30:00Z", "doc", "Selma Marsh", "Team roster",

@@ -235,6 +235,8 @@ def test_episode_endpoint_validates_the_record(ingested):
     ok = {"id": "msg-9001", "ts": "2026-10-15T10:00:00Z", "channel": "chat", "author": "Luca Ostrander", "text": "hello"}
     assert client.post(url, json={**ok, "channel": "email"}).status_code == 422
     assert client.post(url, json={**ok, "ts": "yesterday"}).status_code == 422
+    assert client.post(url, json={**ok, "ts": "2030-01-01T00:00:00Z"}).status_code == 422  # would outrank every real update
+    assert client.post(url, json={**ok, "ts": "2026-13-45T10:00:00Z"}).status_code == 422
     assert client.post(url, json={**ok, "id": "bad id"}).status_code == 422
     assert client.post(url, json={**ok, "text": ""}).status_code == 422
     assert client.post(url, json={**ok, "text": "x" * 20001}).status_code == 422
