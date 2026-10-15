@@ -132,6 +132,14 @@ def test_rate_limit_reads_the_forwarded_address_only_when_told_to(fx_store, monk
     assert client.get(url, headers=b).status_code == 200  # a different visitor behind the same proxy
 
 
+def test_a_forged_forwarded_prefix_does_not_reset_the_limit(fx_store, monkeypatch):
+    monkeypatch.setenv("HM_TRUST_PROXY", "1")
+    client = client_for(fx_store, rate_limit=2)
+    url = f"/v1/{fx_store.tenant}/tools"
+    codes = [client.get(url, headers={"x-forwarded-for": f"198.51.100.{i}, 203.0.113.9"}).status_code for i in range(3)]
+    assert codes == [200, 200, 429]  # same real client (last hop), different forged first entries
+
+
 def test_the_default_limit_is_generous_for_a_shared_nat(fx_store, monkeypatch):
     monkeypatch.delenv("HM_RATE_LIMIT_PER_MIN", raising=False)
     client = client_for(fx_store)
