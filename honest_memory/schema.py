@@ -70,7 +70,7 @@ PREDICATES = {
 FORBIDDEN_PREDICATES = {"HAS_PHONE", "HAS_ADDRESS", "HAS_EMAIL", "HAS_BIRTHDATE", "HAS_CARD"}
 
 # Range indexes created per tenant graph. Both FalkorDB 4.22 (Cloud free) and 6.0.x accept this form.
-INDEXES = [(label, key) for label, key in {**ENTITY_KEYS, **RECORD_KEYS}.items()]
+INDEXES = [(label, key) for label, key in {**ENTITY_KEYS, **RECORD_KEYS}.items()] + [("GateDecision", "repeat_key")]
 
 
 def graph_name(tenant: str) -> str:

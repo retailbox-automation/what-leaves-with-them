@@ -349,6 +349,24 @@ def test_confirming_with_a_known_source_changes_nothing(store):
     assert store.current_facts("OWNS", "Ana", "billing-api")[0]["source_ids"] == ["DOC-01"]
 
 
+def test_an_exact_repeat_is_counted_on_one_receipt_and_does_not_grow_the_graph(store):
+    submit_fact(store, cand(subject="Ana", predicate="WORKED_ON", source_ids=["TCK-0001"], valid_at="2026-09-23T10:00:00Z"))
+    first = submit_fact(store, cand(subject="Ana", predicate="WORKED_ON", source_ids=["TCK-0001"], valid_at="2026-09-23T10:00:00Z"))
+    nodes, edges = count(store, "MATCH (n) RETURN count(n)"), count(store, "MATCH ()-[r]->() RETURN count(r)")
+    again = [submit_fact(store, cand(subject="Ana", predicate="WORKED_ON", source_ids=["TCK-0001"], valid_at="2026-09-23T10:00:00Z"))
+             for _ in range(48)]
+    assert {r.receipt_id for r in again} == {first.receipt_id} and {(r.outcome, r.written) for r in again} == {("CONFIRM", False)}
+    assert (count(store, "MATCH (n) RETURN count(n)"), count(store, "MATCH ()-[r]->() RETURN count(r)")) == (nodes, edges)
+    assert receipt(store, first)["repeats"] == 49
+    (fact,) = store.current_facts("WORKED_ON", "Ana", "billing-api")
+    assert fact["count"] == 1 and fact["source_ids"] == ["TCK-0001"]
+    # a different proposer, or a source the edge does not have yet, is not a repeat
+    other = submit_fact(store, Candidate("Ana", "WORKED_ON", "billing-api", "2026-09-23T10:00:00Z", ["TCK-0001"], proposer="llm"))
+    new_src = submit_fact(store, cand(subject="Ana", predicate="WORKED_ON", source_ids=["TCK-0004"], valid_at="2026-09-24T10:00:00Z"))
+    assert other.receipt_id != first.receipt_id and (new_src.outcome, new_src.written) == ("CONFIRM", True)
+    assert store.current_facts("WORKED_ON", "Ana", "billing-api")[0]["count"] == 2
+
+
 def test_worked_on_count_follows_the_distinct_sources(store):
     items = [("TCK-0001", "2026-09-23T10:00:00Z"), ("TCK-0004", "2026-09-24T10:00:00Z"),
              ("TCK-0005", "2026-09-25T10:00:00Z"), ("TCK-0004", "2026-09-24T10:00:00Z")]

@@ -150,6 +150,11 @@ def _stamp(value: str | None) -> int | None:
         return None
 
 
+def _repeat_key(cand: Candidate, sources: list[str]) -> str:
+    fields = [cand.subject, cand.predicate, cand.object, sorted(sources), cand.proposer]
+    return hashlib.sha1(json.dumps(fields, ensure_ascii=False).encode("utf-8")).hexdigest()[:20]
+
+
 def _receipt_id(seq: int, *fields) -> str:
     digest = hashlib.sha1(json.dumps(fields, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
     return f"GD-{seq:05d}-{digest[:10]}"
@@ -295,6 +300,14 @@ def submit_fact(store: Store, cand: Candidate, at: str | None = None) -> GateRes
     verdict = _judge(store, cand, episodes, names)
 
     valid = _stamp(cand.valid_at)
+    repeat = None
+    if verdict.outcome == CONFIRM and all(s in verdict.current[0][0]["source_ids"] for s in verdict.sources):
+        # Nothing new to learn: the same claim, from the same proposer, on sources the edge already has. Count it on
+        # the receipt of the first such repeat instead of writing one more receipt per call.
+        repeat = _repeat_key(cand, verdict.sources)
+        rows = store.rw("MATCH (g:GateDecision {repeat_key: $k}) SET g.repeats = g.repeats + 1 RETURN g.id", {"k": repeat})
+        if rows:
+            return GateResult(CONFIRM, verdict.reasons, rows[0][0], False)
     seq = store.next_sequence("gate")
     forbidden = cand.predicate in FORBIDDEN_PREDICATES
     subject, obj = _redact(cand.subject)[:SNIPPET], REDACTED if forbidden else _redact(cand.object)[:SNIPPET]
@@ -316,7 +329,8 @@ def submit_fact(store: Store, cand: Candidate, at: str | None = None) -> GateRes
         store, receipt_id,
         {"id": receipt_id, "ts": ts, "outcome": verdict.outcome, "reasons": verdict.reasons,
          "predicate": cand.predicate, "subject": subject, "object": obj, "proposer": cand.proposer,
-         "valid_at": valid, "source_ids": ids, "claim_episode": cand.claim_episode},
+         "valid_at": valid, "source_ids": ids, "claim_episode": cand.claim_episode,
+         "repeat_key": repeat, "repeats": 1 if repeat else None},
         {"Episode": [i for i in ids if i in episodes]}, about, claimed)
     return GateResult(verdict.outcome, verdict.reasons, receipt_id, written, closed)
 
