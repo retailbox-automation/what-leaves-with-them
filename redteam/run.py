@@ -18,6 +18,8 @@ queries. To add one, append a line to attacks.jsonl; nothing in this file has to
     handoff   gate.submit_handoff: from_, to, topic, note, source_ids, at
     episode   ingest.ingest_episode with the rule extractor: episode {id, ts, channel, author, title, text, refs}
     http      method, path ({tenant} is replaced), [headers, json]
+    end       gate.submit_end: subject, predicate, object, source_ids, at   (the CLOSE path)
+    plant     store one Episode as it is, without the extractor or the gate: the setup of an attack
     tenant    name: graph_name() and Store() must raise
 
 Expectations: outcome/reasons (gate calls), results (episode: one {outcome, reasons} per candidate), status /
@@ -55,7 +57,7 @@ from honest_memory import gate  # noqa: E402
 from honest_memory.extract import RuleExtractor  # noqa: E402
 from honest_memory.ingest import ingest_corpus, ingest_episode  # noqa: E402
 from honest_memory.schema import graph_name  # noqa: E402
-from honest_memory.store import Store  # noqa: E402
+from honest_memory.store import Store, epoch  # noqa: E402
 
 FACT_EDGES = ["OWNS", "MEMBER_OF", "LEADS", "WORKED_ON", "DECIDED", "SUPERSEDES", "DEPENDS_ON", "WAS"]
 ENTITY_LABELS = ["Person", "Team", "System", "Decision", "Project"]
@@ -198,6 +200,16 @@ def do_call(ctx: Ctx, call: dict) -> dict:
         ctx.gate_calls += 1
         return summary(gate.submit_handoff(ctx.store, call["from_"], call["to"], call["topic"], call["note"],
                                            call["source_ids"], call["at"]))
+    if kind == "end":
+        ctx.gate_calls += 1
+        return summary(gate.submit_end(ctx.store, call["subject"], call["predicate"], call["object"],
+                                       list(call["source_ids"]), call["at"]))
+    if kind == "plant":
+        ep = {"refs": [], "title": "", **call["episode"]}
+        ctx.episodes += 1
+        ctx.store.merge_entity("Episode", ep["id"], {"ts": epoch(ep["ts"]), "channel": ep["channel"], "author": ep["author"],
+                                                      "title": ep["title"], "text": ep["text"]})
+        return {"planted": ep["id"]}
     if kind == "episode":
         ep = {"refs": [], **call["episode"]}
         ctx.episodes += 1
@@ -218,6 +230,8 @@ def do_call(ctx: Ctx, call: dict) -> dict:
                 got["reasons"] = body["receipts"][0].get("reasons")
             if isinstance(body.get("result"), list):
                 got["results"] = [{"outcome": r["outcome"], "reasons": r["reasons"]} for r in body["result"]]
+                ctx.episodes += 1
+                ctx.gate_calls += len(got["results"])
         if call["method"] == "POST" and resp.status_code == 200 and call["path"].startswith("/v1/{tenant}/tools/"):
             ctx.gate_calls += 1
         return got
@@ -264,6 +278,8 @@ def fmt_got(got: dict) -> str:
         return f"HTTP {got['status']}" + (f" {extra}" if extra else "")
     if "raises" in got:
         return got["raises"] or "accepted"
+    if "planted" in got:
+        return "planted " + got["planted"]
     return fmt_summary(got)
 
 
@@ -297,7 +313,8 @@ def run_attack(attack: dict, db, client_factory, corpus: Path, tag: str) -> dict
     store = Store(db, tenant)
     started = time.perf_counter()
     result = {"id": attack["id"], "class": attack["class"], "name": attack["name"], "description": attack["description"],
-              "expected": collapse([fmt_expect(s["expect"]) for s in attack["steps"]]), "steps": [], "problems": []}
+              "expected": collapse([fmt_expect(s["expect"]) for s in attack["steps"] if s["call"]["kind"] != "plant"]),
+              "steps": [], "problems": []}
     try:
         ingest_corpus(store, corpus, reset=True)
         ctx = Ctx(db, store, tenant, client_factory(db))
@@ -313,7 +330,8 @@ def run_attack(attack: dict, db, client_factory, corpus: Path, tag: str) -> dict
                 got = {"exc": f"{type(exc).__name__}: {str(exc).splitlines()[0][:100] if str(exc) else ''}"}
             problems = ["raised " + got["exc"]] if "exc" in got else judge_step(step["expect"], got)
             shown = {k: v for k, v in got.items() if k != "body"}
-            result["steps"].append({"got": fmt_got(got), "ok": not problems, "problems": problems, "raw": shown})
+            result["steps"].append({"got": fmt_got(got), "ok": not problems, "problems": problems, "raw": shown,
+                                    "setup": step["call"]["kind"] == "plant"})
             result["problems"] += [f"step {len(result['steps'])}: {p}" for p in problems]
         after = snapshot(store, deep=deep)
         graph_problems = check_graph(spec, before, after, ctx.gate_calls, ctx.episodes, db)
@@ -340,7 +358,7 @@ def run_attack(attack: dict, db, client_factory, corpus: Path, tag: str) -> dict
     result["seconds"] = round(time.perf_counter() - started, 2)
     if "max_seconds" in attack and result["seconds"] > attack["max_seconds"]:
         result["problems"].append(f"took {result['seconds']} s, limit {attack['max_seconds']} s")
-    result["got"] = collapse([s["got"] for s in result["steps"]])
+    result["got"] = collapse([s["got"] for s in result["steps"] if not s["setup"]])
     result["pass"] = not result["problems"]
     return result
 
