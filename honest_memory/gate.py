@@ -24,7 +24,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from .names import episode_mentions
+from .names import episode_states
 from .schema import ENTITY_KEYS, FORBIDDEN_PREDICATES, PREDICATES, Predicate
 from .store import Store, epoch
 
@@ -32,6 +32,9 @@ ACCEPT, CONFIRM, SUPERSEDE, REJECT = "ACCEPT", "CONFIRM", "SUPERSEDE", "REJECT"
 
 # Edge properties owned by the gate: a candidate's attrs may not overwrite them.
 RESERVED = {"valid_at", "invalid_at", "source_ids", "gate_id", "closed_by", "predicate"}
+# The word a source must use, in the same line as both names, to be said to state the relation. No cue: the names alone.
+CUES = {"OWNS": r"\bown", "MEMBER_OF": r"\bteam\b|\bjoin|\bmember", "LEADS": r"\blead", "DECIDED": r"\bauthor\b|\bdecid",
+        "SUPERSEDES": r"\bsupersede|\breplace", "DEPENDS_ON": r"\bdepend"}
 # Predicates whose edge carries `count`, the number of distinct sources (work items).
 COUNTED = {"WORKED_ON"}
 REDACTED = "[redacted]"
@@ -188,12 +191,28 @@ def _conflicts(store: Store, p: Predicate, subject: str, obj: str) -> list[tuple
     return []
 
 
+def _closed_without_news(store: Store, p: Predicate, cand: Candidate, label: str, stating: dict) -> bool:
+    """True when this very fact was closed before and none of the sources that state it again is both newer than the
+    closing and independent of the evidence that held it (a message that merely points at the old document is not)."""
+    sk, ok = ENTITY_KEYS[p.subject], ENTITY_KEYS[label]
+    closed = store.ro(f"MATCH (s:{p.subject} {{{sk}: $s}})-[h:WAS]->(o:{label} {{{ok}: $o}}) WHERE h.predicate = $p "
+                      "RETURN h.invalid_at, h.source_ids", {"s": cand.subject, "o": cand.object, "p": p.name})
+    if not closed:
+        return False
+    closed_at, held_by = max(r[0] for r in closed), [i for r in closed for i in r[1]]
+    fresh = [s for s, ep in stating.items() if ep.get("ts", 0) > closed_at]
+    relays = {r[0] for r in store.ro("MATCH (e:Episode)-[:REFERS_TO]->(r:Episode) WHERE e.id IN $ids AND r.id IN $old "
+                                     "RETURN DISTINCT e.id", {"ids": fresh, "old": held_by})} if fresh else set()
+    return not [s for s in fresh if s not in relays]
+
+
 @dataclass
 class _Verdict:
     outcome: str
     reasons: list[str]
     object_label: str | None = None
     current: list[tuple[dict, str]] = field(default_factory=list)  # CONFIRM: the edge; SUPERSEDE: edges to close
+    sources: list[str] = field(default_factory=list)  # the cited episodes that state the fact; the edge keeps only these
 
 
 def _judge(store: Store, cand: Candidate, episodes: dict, names: _Names) -> _Verdict:
@@ -220,8 +239,13 @@ def _judge(store: Store, cand: Candidate, episodes: dict, names: _Names) -> _Ver
     # 4
     if any(s not in episodes for s in cand.source_ids):
         return refuse("source_not_found")
+    claim_ts = (episodes.get(cand.claim_episode) or {}).get("ts")
+    if claim_ts is not None and any(episodes[s].get("ts", 0) > claim_ts for s in cand.source_ids):
+        return refuse("source_after_claim")  # a claim cannot rest on a document that did not exist when it was read
     # 5
-    if not any(episode_mentions(episodes[s], cand.subject, cand.object) for s in cand.source_ids):
+    cue = CUES.get(p.name, "")
+    stating = [s for s in cand.source_ids if episode_states(episodes[s], cue, cand.subject, cand.object)]
+    if not stating:
         return refuse("ungrounded")
     # 6
     object_label = names.label(cand.object, p.object_labels)
@@ -230,17 +254,21 @@ def _judge(store: Store, cand: Candidate, episodes: dict, names: _Names) -> _Ver
     # 7
     same = [(f, object_label) for f in store.current_facts(p.name, cand.subject, cand.object, object_label=object_label)]
     if same:
-        return _Verdict(CONFIRM, ["already_current"], object_label, same)
-    if p.name == "SUPERSEDES" and store.ro("MATCH (d:Decision {id: $k}) WHERE d.status = 'superseded' RETURN 1", {"k": cand.subject}):
-        return refuse("superseded_decision")  # a decision that is no longer in force cannot replace another
+        return _Verdict(CONFIRM, ["already_current"], object_label, same, stating)
     # 8
     conflicts = _conflicts(store, p, cand.subject, cand.object)
     if any(valid <= f["valid_at"] for f, _ in conflicts):
         return _Verdict(REJECT, ["older_than_current"], object_label)
+    if valid > max((episodes[s].get("ts", 0) for s in stating), default=0):
+        return refuse("valid_after_source")  # a claim cannot be newer than the evidence that states it
+    if _closed_without_news(store, p, cand, object_label, {s: episodes[s] for s in stating}):
+        return refuse("closed_fact")
+    if p.name == "SUPERSEDES" and store.ro("MATCH (d:Decision {id: $k}) WHERE d.status = 'superseded' RETURN 1", {"k": cand.subject}):
+        return refuse("superseded_decision")
     if conflicts:
-        return _Verdict(SUPERSEDE, ["newer_than_current"], object_label, conflicts)
+        return _Verdict(SUPERSEDE, ["newer_than_current"], object_label, conflicts, stating)
     # 9
-    return _Verdict(ACCEPT, ["new_fact"], object_label)
+    return _Verdict(ACCEPT, ["new_fact"], object_label, sources=stating)
 
 
 # ---- writing receipts and records ---------------------------------------------------------------------------
@@ -298,7 +326,7 @@ def _apply(store: Store, p: Predicate, cand: Candidate, verdict: _Verdict, label
     closed: list[dict] = []
     if verdict.outcome == CONFIRM:
         edge = verdict.current[0][0]
-        new = [s for s in cand.source_ids if s not in edge["source_ids"]]
+        new = [s for s in verdict.sources if s not in edge["source_ids"]]
         if new:
             store.add_fact_source(p.name, cand.subject, cand.object, new, object_label=label)
             if p.name in COUNTED:
@@ -311,9 +339,9 @@ def _apply(store: Store, p: Predicate, cand: Candidate, verdict: _Verdict, label
         closed.append({"predicate": p.name, "subject": old["subject"], "object": old["object"],
                        "valid_at": old["valid_at"], "invalid_at": valid, "source_ids": old["source_ids"]})
     props = {k: v for k, v in cand.attrs.items() if k not in RESERVED}
-    props.update(valid_at=valid, source_ids=cand.source_ids, gate_id=receipt_id)
+    props.update(valid_at=valid, source_ids=verdict.sources, gate_id=receipt_id)
     if p.name in COUNTED:
-        props["count"] = len(cand.source_ids)
+        props["count"] = len(verdict.sources)
     store.create_fact(p.name, cand.subject, cand.object, props, object_label=label)
     _after_write(store, p, cand)
     return True, closed

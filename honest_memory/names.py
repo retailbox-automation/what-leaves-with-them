@@ -25,6 +25,24 @@ def episode_mentions(episode: dict, *names: str) -> bool:
     return all(mentions(haystack, n) for n in names)
 
 
+FIRST_PERSON = re.compile(r"\b(?:I|my|me)\b")  # case-sensitive on purpose: "I", not "i" in a list
+
+
+def episode_states(episode: dict, cue: str, *names: str) -> bool:
+    """True when one line of the episode names every given name and, if the relation has a cue (a regex such as
+    r"\\bown" for OWNS), carries it. The title counts for every line (a runbook's title is its system), a chat message's
+    title does not. The author counts as named only on a first-person line ("I am now the owner of billing-api") or for
+    a relation with no cue: whoever writes "fixed X in billing-api" did the work, but writing a catalog does not make
+    you a party to each of its lines."""
+    title = "" if episode.get("channel") == "chat" else str(episode.get("title") or "")
+    author = str(episode.get("author") or "")
+    for line in str(episode.get("text") or "").splitlines() or [""]:
+        who = author if not cue or FIRST_PERSON.search(line) else ""
+        if all(mentions(f"{line}\n{title}\n{who}", n) for n in names) and (not cue or re.search(cue, f"{line}\n{title}", re.IGNORECASE)):
+            return True
+    return False
+
+
 class NameIndex:
     """Known entity names by label, with one compiled matcher over all of them."""
 

@@ -21,7 +21,7 @@ EPISODES = [  # id, ts, channel, author, text
     ("DOC-04", "2026-08-19T10:00:00Z", "doc", "Cy", "Author: Ana. Reviewed by Cy."),
     ("DOC-05", "2026-08-20T10:00:00Z", "doc", "Cy", "Zed owns auth."),
     ("DOC-06", "2026-08-17T13:00:00Z", "doc", "Cy",
-     "Roster. Ana: Backend Engineer, Payments team. Bo: Backend Engineer, Platform team."),
+     "Roster. Ana: Payments Lead, Payments team. Bo: Backend Engineer, Platform team."),
     ("DOC-07", "2026-09-01T10:00:00Z", "doc", "Cy", "Ana moved to the Platform team."),
     ("DOC-08", "2026-08-18T14:00:00Z", "doc", "Cy", "Project charter: Ledger Hardening. Lead: Ana (Payments)."),
     ("PM-03", "2026-09-10T14:00:00Z", "doc", "Cy", "Decision: ADR-0011 supersedes ADR-0004."),
@@ -122,11 +122,14 @@ def test_leads_accepts_a_team_or_a_project(store):
 
 
 def test_non_functional_predicates_accumulate(store):
-    for who, src in (("Ana", "TCK-0001"), ("Bo", "msg-0100")):  # msg-0100 is written by Bo and names billing-api
-        res = submit_fact(store, cand(subject=who, predicate="WORKED_ON", source_ids=[src], valid_at="2026-10-01T14:00:00Z"))
+    for who, src, at in (("Ana", "TCK-0001", "2026-09-23T10:00:00Z"),
+                         ("Bo", "msg-0100", "2026-10-01T14:00:00Z")):  # msg-0100 is written by Bo and names billing-api
+        res = submit_fact(store, cand(subject=who, predicate="WORKED_ON", source_ids=[src], valid_at=at))
         assert res.outcome == "ACCEPT"
     assert typed_edges(store, "WORKED_ON") == 2
-    for obj, src in (("ledger-db", "DOC-09"), ("auth", "DOC-01")):  # grounding checks names, not the relation
+    store.merge_entity("Episode", "DOC-10", {"ts": epoch("2026-08-21T10:00:00Z"), "channel": "doc", "author": "Cy",
+                                             "title": "", "text": "Architecture. billing-api depends on auth."})
+    for obj, src in (("ledger-db", "DOC-09"), ("auth", "DOC-10")):  # the source must say "depends", not only name both
         res = submit_fact(store, cand(subject="billing-api", predicate="DEPENDS_ON", object=obj,
                                       source_ids=[src], valid_at="2026-08-21T10:00:00Z"))
         assert res.outcome == "ACCEPT"
@@ -236,6 +239,16 @@ def test_cites_only_episodes_that_exist(store):
     assert receipt(store, res)["source_ids"] == ["DOC-01", "DOC-99"]
 
 
+def test_a_source_dated_after_the_claim_it_supports_is_refused(store):
+    late = submit_fact(store, cand(subject="Ana", predicate="WORKED_ON", source_ids=["TCK-0004"],
+                                   valid_at="2026-09-24T10:00:00Z", claim_episode="TCK-0001"))  # claim read 09-23, source of 09-24
+    assert (late.outcome, late.reasons, late.written) == ("REJECT", ["source_after_claim"], False)
+    ok = submit_fact(store, cand(subject="Ana", predicate="WORKED_ON", source_ids=["TCK-0004"],
+                                 valid_at="2026-09-24T10:00:00Z", claim_episode="TCK-0005"))
+    assert ok.outcome == "ACCEPT"
+    assert typed_edges(store, "WORKED_ON") == 1
+
+
 # ---- check 5: a cited episode mentions both ends ---------------------------------------------------
 def test_source_that_names_only_one_end_is_ungrounded(store):
     res = submit_fact(store, cand(object="auth", source_ids=["DOC-03"]))
@@ -249,17 +262,18 @@ def test_names_match_whole_words_so_author_does_not_ground_auth(store):
 def test_grounding_is_case_insensitive_and_counts_the_author(store):
     assert submit_fact(store, cand(subject="Ana", predicate="WORKED_ON", object="billing-api",
                                    source_ids=["TCK-0001"], valid_at="2026-09-23T10:00:00Z")).outcome == "ACCEPT"
-    store.merge_entity("Episode", "msg-0200", {"ts": 1, "author": "Cy", "title": "", "text": "ANA OWNS BILLING-API"})
+    store.merge_entity("Episode", "msg-0200", {"ts": epoch("2026-08-17T12:00:00Z"), "author": "Cy", "title": "",
+                                               "text": "ANA OWNS BILLING-API"})
     assert submit_fact(store, cand(source_ids=["msg-0200"])).outcome == "ACCEPT"
 
 
 def test_a_chat_channel_name_does_not_ground_a_fact_but_a_ticket_title_does(store):
-    store.merge_entity("Episode", "msg-0300", {"ts": 1, "channel": "chat", "author": "Ana", "title": "#payments",
+    store.merge_entity("Episode", "msg-0300", {"ts": 1, "channel": "chat", "author": "Ana", "title": "#billing-api",
                                                "text": "Lunch is at noon."})
-    store.merge_entity("Episode", "TCK-0300", {"ts": 1, "channel": "ticket", "author": "Ana", "title": "Payments sync",
+    store.merge_entity("Episode", "TCK-0300", {"ts": 1, "channel": "ticket", "author": "Ana", "title": "billing-api retries",
                                                "text": "Lunch is at noon."})
-    chat = submit_fact(store, cand(predicate="MEMBER_OF", object="Payments", source_ids=["msg-0300"]))
-    ticket = submit_fact(store, cand(predicate="MEMBER_OF", object="Payments", source_ids=["TCK-0300"]))
+    chat = submit_fact(store, cand(predicate="WORKED_ON", source_ids=["msg-0300"], valid_at="1970-01-01T00:00:01Z"))
+    ticket = submit_fact(store, cand(predicate="WORKED_ON", source_ids=["TCK-0300"], valid_at="1970-01-01T00:00:01Z"))
     assert (chat.reasons, ticket.outcome) == (["ungrounded"], "ACCEPT")
 
 
@@ -267,6 +281,39 @@ def test_both_ends_must_appear_in_one_episode_not_spread_over_two(store):
     store.merge_entity("Episode", "msg-0201", {"ts": 1, "author": "Cy", "title": "", "text": "Ana is busy."})
     store.merge_entity("Episode", "msg-0202", {"ts": 2, "author": "Cy", "title": "", "text": "auth is flaky."})
     assert submit_fact(store, cand(object="auth", source_ids=["msg-0201", "msg-0202"])).reasons == ["ungrounded"]
+
+
+def test_names_in_the_same_line_must_come_with_the_relation_word(store):
+    store.merge_entity("Episode", "msg-0500", {"ts": epoch("2026-10-02T10:00:00Z"), "channel": "chat", "author": "Ana", "title": "#platform",
+                                               "text": "Wrapped up tests for session expiry in auth, merging after lunch."})
+    assert submit_fact(store, cand(subject="Cy", object="auth", source_ids=["DOC-01"])).outcome == "ACCEPT"
+    owns = submit_fact(store, cand(object="auth", source_ids=["msg-0500"], valid_at="2026-10-02T10:00:00Z"))
+    assert (owns.outcome, owns.reasons) == ("REJECT", ["ungrounded"])  # names both, says nothing about ownership
+    assert [f["subject"] for f in store.current_facts("OWNS", obj="auth")] == ["Cy"]
+    worked = submit_fact(store, cand(predicate="WORKED_ON", object="auth", source_ids=["msg-0500"], valid_at="2026-10-02T10:00:00Z"))
+    assert worked.outcome == "ACCEPT"  # for WORKED_ON the author and the system are enough
+
+
+def test_the_author_of_a_catalog_does_not_become_a_party_to_every_line(store):
+    store.merge_entity("Episode", "DOC-11", {"ts": epoch("2026-08-17T12:00:00Z"), "channel": "doc", "author": "Cy", "title": "Service catalog",
+                                             "text": "- billing-api: public API. Owner: Ana (Payments).\n- ledger-db: ledger. Owner: Bo (Platform)."})
+    assert submit_fact(store, cand(subject="Cy", source_ids=["DOC-11"])).reasons == ["ungrounded"]  # Cy only wrote the page
+    assert submit_fact(store, cand(subject="Bo", source_ids=["DOC-11"])).reasons == ["ungrounded"]  # Bo owns the other line
+    assert submit_fact(store, cand(source_ids=["DOC-11"])).outcome == "ACCEPT"
+
+
+def test_a_first_person_line_names_its_author(store):
+    store.merge_entity("Episode", "msg-0600", {"ts": epoch("2026-10-02T10:00:00Z"), "channel": "chat", "author": "Cy", "title": "#platform",
+                                               "text": "I am now the owner of billing-api."})
+    assert submit_fact(store, cand(subject="Cy", source_ids=["msg-0600"], valid_at="2026-10-02T10:00:00Z")).outcome == "ACCEPT"
+    other = submit_fact(store, cand(subject="Bo", source_ids=["msg-0600"], valid_at="2026-10-02T10:00:00Z"))
+    assert other.reasons == ["ungrounded"]  # the speaker speaks for himself only
+
+
+def test_names_on_different_lines_do_not_make_a_statement(store):
+    store.merge_entity("Episode", "DOC-12", {"ts": epoch("2026-08-17T12:00:00Z"), "channel": "doc", "author": "Cy", "title": "",
+                                             "text": "Ana is on call.\nbilling-api is noisy.\nOwnership review is due."})
+    assert submit_fact(store, cand(source_ids=["DOC-12"])).reasons == ["ungrounded"]
 
 
 # ---- check 6: entities resolve with the right label ---------------------------------------------------
@@ -286,11 +333,11 @@ def test_entity_of_the_wrong_label_is_unknown_for_that_predicate(store):
 # ---- check 7: CONFIRM -----------------------------------------------------------------------------------
 def test_same_fact_confirms_and_adds_the_source(store):
     first = submit_fact(store, cand())
-    res = submit_fact(store, cand(source_ids=["TCK-0001"], valid_at="2026-09-23T10:00:00Z",
+    res = submit_fact(store, cand(source_ids=["msg-0100"], valid_at="2026-10-01T14:00:00Z",
                                   subject="Ana", object="billing-api"))
     assert (res.outcome, res.reasons, res.written) == ("CONFIRM", ["already_current"], True)
     (fact,) = store.current_facts("OWNS", "Ana", "billing-api")
-    assert fact["source_ids"] == ["DOC-01", "TCK-0001"] and fact["gate_id"] == first.receipt_id
+    assert fact["source_ids"] == ["DOC-01", "msg-0100"] and fact["gate_id"] == first.receipt_id
     assert fact["valid_at"] == epoch("2026-08-17T12:00:00Z")  # the fact keeps its original start
     assert typed_edges(store, "OWNS") == 1
 
@@ -346,6 +393,34 @@ def test_a_claim_at_exactly_the_current_start_is_not_newer(store):
     submit_fact(store, adr9_owner())
     res = submit_fact(store, cand(subject="Ana", source_ids=["ADR-0009"], valid_at="2026-09-22T15:28:00Z"))
     assert (res.outcome, res.reasons) == ("REJECT", ["older_than_current"])
+
+
+def test_a_claim_cannot_be_newer_than_the_sources_that_state_it(store):
+    submit_fact(store, cand())
+    forged = submit_fact(store, cand(subject="Bo", source_ids=["ADR-0009"], valid_at="2030-01-01T00:00:00Z"))
+    assert (forged.outcome, forged.reasons, forged.written) == ("REJECT", ["valid_after_source"], False)
+    # a newer source that does not state the claim does not help: TCK-0005 names neither Bo nor an owner
+    padded = submit_fact(store, cand(subject="Bo", source_ids=["ADR-0009", "TCK-0005"], valid_at="2026-09-25T10:00:00Z"))
+    assert (padded.outcome, padded.reasons) == ("REJECT", ["valid_after_source"])
+    later = submit_fact(store, cand(subject="Ana", predicate="WORKED_ON", source_ids=["TCK-0001"], valid_at="2030-01-01T00:00:00Z"))
+    assert later.reasons == ["valid_after_source"] and typed_edges(store, "WORKED_ON") == 0
+    assert [f["subject"] for f in store.current_facts("OWNS", obj="billing-api")] == ["Ana"]
+    again = submit_fact(store, cand(valid_at="2030-01-01T00:00:00Z"))  # a fact that is already current is only confirmed
+    assert again.outcome == "CONFIRM"
+
+
+def test_a_closed_fact_comes_back_only_on_new_evidence(store):
+    submit_fact(store, cand())
+    submit_fact(store, adr9_owner())  # Ana's ownership is closed on 2026-09-22
+    store.merge_entity("Episode", "msg-0400", {"ts": epoch("2026-10-02T09:00:00Z"), "channel": "chat", "author": "Bo", "title": "#support",
+                                               "text": "Quoting the runbook: Ana owns billing-api."})
+    store.link("Episode", "msg-0400", "REFERS_TO", "Episode", ["DOC-01"])
+    relay = submit_fact(store, cand(source_ids=["msg-0400"], valid_at="2026-10-02T09:00:00Z"))
+    assert (relay.outcome, relay.reasons, relay.written) == ("REJECT", ["closed_fact"], False)
+    assert [f["subject"] for f in store.current_facts("OWNS", obj="billing-api")] == ["Bo"]
+    # the same words in a message that points at nothing old are new evidence: the gate cannot tell the difference
+    fresh = submit_fact(store, cand(source_ids=["msg-0100"], valid_at="2026-10-01T14:00:00Z"))
+    assert (fresh.outcome, fresh.reasons) == ("SUPERSEDE", ["newer_than_current"])
 
 
 def test_functional_on_the_subject_side(store):
