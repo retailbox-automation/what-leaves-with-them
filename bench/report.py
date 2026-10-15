@@ -12,14 +12,15 @@ LABELS = {"plain-rag": "plain RAG", "honest-router": "honest-memory, router (no 
 
 
 def _cells(b: dict) -> str:
-    return f"{b['n']} | {b['correct']:.1f} | {b['stale']:.1f} | {b['unsupported']:.1f} | {b['clean']:.1f} | {b['median_ms']:,}"
+    return (f"{b['n']} | {b['correct']:.1f} | {b['stale']:.1f} | {b['unsupported']:.1f} | {b['clean']:.1f} | "
+            f"{b['abstained']:.1f} | {b['median_ms']:,}")
 
 
 def _overall(b: dict) -> str:
     return f"{_cells(b)} | {b['correct_literal']:.1f} | {b['correct_sentence_only']:.1f} | {b['leaked']}"
 
 
-HEAD = "| {} | n | correct % | stale % | unsupported % | clean % | median ms |\n|---|---|---|---|---|---|---|"
+HEAD = "| {} | n | correct % | stale % | unsupported % | clean % | no answer % | median ms |\n|---|---|---|---|---|---|---|---|"
 
 
 def build_summary(meta: dict, results: dict[str, list[dict]]) -> dict:
@@ -27,7 +28,7 @@ def build_summary(meta: dict, results: dict[str, list[dict]]) -> dict:
 
 
 def _excerpt(text: str, n: int = 170) -> str:
-    text = " ".join(text.split()).replace("|", "\\|")
+    text = " ".join(str(text).split()).replace("|", "\\|")
     return text if len(text) <= n else text[:n - 1] + "…"
 
 
@@ -64,7 +65,8 @@ def render(summary: dict, results: dict[str, list[dict]]) -> str:
         f"{m['ingest']['gate_calls']} gate decisions in {m['ingest']['seconds']} s "
         f"({', '.join(f'{k} {v}' for k, v in m['ingest']['outcomes'].items())}).", "",
         "How each column is decided is in `bench/score.py` (names and dates, no model as judge) and `bench/README.md`. "
-        "**clean** = correct and not stale, unsupported or leaking personal data.", "",
+        "**clean** = correct and not stale, unsupported or leaking personal data. **no answer** = the answer says the "
+        "records or memory do not hold it (a miss, not a wrong answer).", "",
         "## All questions", "", HEAD.format("system") .replace("median ms |", "median ms | literal-rule correct % | sentence-only correct % | personal data leaks |")
         + "---|---|---|",
     ]

@@ -140,6 +140,12 @@ def test_unsupported_names(truth, questions):
     assert why["2027-01-05"] == "date nowhere in the corpus"
 
 
+def test_english_compound_with_a_system_name_is_not_a_system(truth, questions):
+    q = questions["Q031"]
+    v = score(q, "Lars Thorne, with several auth-related tasks.", "Lars Thorne auth", truth)
+    assert not v["unsupported"]
+
+
 def test_every_gold_answer_scores_correct_against_itself(truth, corpus):
     """The scorer accepts the corpus's own gold answers, with their source ids (a floor check: the gold must not fail
     its own rules)."""
@@ -170,3 +176,16 @@ def test_abstaining_is_not_stale_or_unsupported(truth, questions):
 def test_dates_in_episode_timestamps_exist(truth, questions):
     q = questions["Q017"]
     assert not score(q, "Sana Petrov: refused on 2026-10-01.", "Sana Petrov", truth)["unsupported"]
+
+
+def test_unseen_question_types_and_odd_gold_rows_are_scored_by_the_same_rules(truth, corpus):
+    gold = list(corpus.gold) + [{"id": "F999", "predicate": "LEFT_COMPANY", "subject": "Sana Petrov", "object": None,
+                                   "valid_at": None, "invalid_at": None, "scenario": "S11"}]
+    t = Truth(corpus.episodes, gold, END.strftime("%Y-%m-%dT%H:%M:%SZ"))
+    q = {"id": "Q900", "type": "departure_depth1", "question": "Who is affected if Sana Petrov leaves?",
+         "answer": "Luca Ostrander.", "source_ids": [], "as_of": None, "scenario": "S11"}
+    assert score(q, "Luca Ostrander.", "Luca Ostrander", t)["correct"]
+    assert not score(q, "Nobody.", "", t)["correct"]
+    refusal = {**q, "type": "not_in_graph", "answer": "The graph holds nothing about that."}
+    assert score(refusal, "The memory has no record of that.", "", t)["correct"]
+    assert not score(refusal, "Luca Ostrander does.", "Luca Ostrander", t)["correct"]

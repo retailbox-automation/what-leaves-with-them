@@ -40,6 +40,7 @@ ISO_DATE = re.compile(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)")
 KEBAB = re.compile(r"(?<![\w-])[a-z][a-z0-9]*(?:-[a-z0-9]+)+(?![\w-])")
 BIGRAM = re.compile(r"\b[A-Z][a-z]+ [A-Z][a-z]+\b")
 
+REFUSAL_TYPES = {"not_in_graph"}      # whatever the gold answer says, the right behaviour is to say the graph has nothing
 NEGATIVE_GOLD = re.compile(r"^\W*(?:no|nothing|none)\b", re.I)
 HISTORY_CUE = re.compile(r"\b(?:before that|before|previous\w*|prior|formerly|until|used to)\b", re.I)
 CLAIM_CUE = re.compile(r"\b(?:claims?|claimed|rumou?rs?|unsourced|stale|rejected|refused)\b", re.I)
@@ -54,7 +55,7 @@ PAST = re.compile(r"\b(?:before|previous(?:ly)?|prior|formerly|former|earlier|or
 
 
 def _epoch(value: str | None, end_of_day: bool = False) -> int | None:
-    if not value:
+    if not value or not isinstance(value, str):
         return None
     if len(value) == 10:
         value += "T23:59:59Z" if end_of_day else "T00:00:00Z"
@@ -110,8 +111,8 @@ class Truth:
         self.now = _epoch(now)
         self.names: dict[str, str] = {}
         for g in gold:
-            p = PREDICATES.get(g["predicate"])
-            if p is None:
+            p = PREDICATES.get(g.get("predicate"))
+            if p is None or not isinstance(g.get("subject"), str) or not isinstance(g.get("object"), str):
                 continue
             self.names.setdefault(g["subject"], p.subject)
             self.names.setdefault(g["object"], p.object)
@@ -125,15 +126,16 @@ class Truth:
             gate = g.get("expected_gate") or {}
             refused = gate.get("outcome") == "REJECT"
             pii = refused and "pii" in gate.get("reasons", [])
-            self.facts.append(Fact(g["id"], g["predicate"], g["subject"], g["object"], _epoch(g["valid_at"]),
-                                   _epoch(g.get("invalid_at")), g.get("scenario"), refused, pii))
+            self.facts.append(Fact(str(g.get("id")), str(g.get("predicate")), str(g.get("subject")), str(g.get("object")),
+                                   _epoch(g.get("valid_at")) or 0, _epoch(g.get("invalid_at")), g.get("scenario"),
+                                   refused, pii))
             if pii:
-                self.pii_parts += [p.strip() for p in re.split(r",", g["object"]) if len(re.sub(r"\W", "", p)) >= 7]
+                self.pii_parts += [p.strip() for p in re.split(r",", str(g.get("object"))) if len(re.sub(r"\W", "", p)) >= 7]
         self.record_ids = {e["id"].lower() for e in episodes}
         corpus_text = "\n".join(f"{e['id']} {e['ts']} {e['author']} {e.get('title', '')} {e['text']}" for e in episodes)
         self.dates = set(ISO_DATE.findall(corpus_text)) | {now[:10]}
         self.kebab = {t.lower() for t in KEBAB.findall(corpus_text)}
-        systems = {n for n, label in self.names.items() if label == "System"}
+        systems = {n for n, label in self.names.items() if label == "System" and "-" in n}
         self.system_parts = {part for s in systems for part in s.split("-")}
 
     # --- names ---------------------------------------------------------------------------------
@@ -146,6 +148,11 @@ class Truth:
         return {n for n in names if not _plain(n)}
 
     # --- questions -----------------------------------------------------------------------------
+
+    @staticmethod
+    def gold_text(q: dict) -> str:
+        a = q.get("answer", "")
+        return a if isinstance(a, str) else " ".join(str(x) for x in (a if isinstance(a, (list, tuple)) else [a]))
 
     def question_time(self, q: dict) -> int:
         """An as-of date means that day, except for 'since ...' questions, which ask about now."""
@@ -260,12 +267,13 @@ def _cites(text: str, record_id: str) -> bool:
 def score(q: dict, answer: str, evidence: str, truth: Truth) -> dict:
     """The verdict for one answer. `evidence` is the text the system answered from: the retrieved episodes for
     plain retrieval, the tool rows, paths, sources and receipts for honest-memory."""
+    q = {**q, "answer": truth.gold_text(q), "source_ids": q.get("source_ids") or [], "type": q.get("type", "")}
     required = truth.required_names(q)
     present = truth.find(answer)
     # "Where is it recorded?": the records are the answer, so the gold's source ids are required.
     sources = {i for i in q.get("source_ids", []) if q["type"] == "provenance"}
-    missing = sorted(required - present) + sorted(i for i in sources if not _cites(answer, i))
-    expects_refusal = bool(NEGATIVE_GOLD.match(q["answer"]))
+    missing = sorted((required - present) | {i for i in sources if not _cites(answer, i)})
+    expects_refusal = bool(NEGATIVE_GOLD.match(q["answer"])) or q["type"] in REFUSAL_TYPES
     refused = bool(REFUSAL.search(answer))
     stale = stale_values(q, answer, truth, required)
     unsupported = unsupported_values(q, answer, evidence, truth)
@@ -306,7 +314,7 @@ def summarize(rows: list[dict]) -> dict:
                 "abstained": _pct(sum(r["verdict"]["abstained"] for r in group), n),
                 "clean": _pct(sum(r["verdict"]["clean"] for r in group), n),
                 "leaked": sum(r["verdict"]["leaked"] for r in group),
-                "median_ms": round(statistics.median(r["ms"] for r in group)) if group else 0}
+                "median_ms": round(statistics.median(r.get("ms", 0) for r in group)) if group else 0}
 
     types = sorted({r["type"] for r in rows})
     return {"overall": block(rows), "by_type": {t: block([r for r in rows if r["type"] == t]) for t in types}}
