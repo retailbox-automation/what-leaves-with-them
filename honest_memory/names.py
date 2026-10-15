@@ -17,6 +17,12 @@ def mentions(text: str, name: str) -> bool:
     return bool(name) and re.search(_pattern(name), text, re.IGNORECASE) is not None
 
 
+def episode_mentions(episode: dict, *names: str) -> bool:
+    """True when one episode names every given name: in its text, its title or as its author."""
+    haystack = "\n".join(str(episode.get(k) or "") for k in ("text", "title", "author"))
+    return all(mentions(haystack, n) for n in names)
+
+
 class NameIndex:
     """Known entity names by label, with one compiled matcher over all of them."""
 

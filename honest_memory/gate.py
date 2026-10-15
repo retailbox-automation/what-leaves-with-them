@@ -24,7 +24,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from .names import mentions
+from .names import episode_mentions
 from .schema import ENTITY_KEYS, FORBIDDEN_PREDICATES, PREDICATES, Predicate
 from .store import Store, epoch
 
@@ -163,11 +163,6 @@ def _about(names: _Names, name: str, preferred) -> tuple[str, str] | None:
     return (label, name) if label else None
 
 
-def _grounded(episode: dict, *names: str) -> bool:
-    haystack = "\n".join(str(episode.get(k) or "") for k in ("text", "title", "author"))
-    return all(mentions(haystack, n) for n in names)
-
-
 def _current(store: Store, p: Predicate, subject: str | None, obj: str | None) -> list[tuple[dict, str]]:
     """Current edges of a predicate with the label of their object, over every label the object may carry."""
     return [(f, label) for label in p.object_labels for f in store.current_facts(p.name, subject, obj, object_label=label)]
@@ -210,7 +205,7 @@ def _judge(store: Store, cand: Candidate, episodes: dict, names: _Names) -> _Ver
     if any(s not in episodes for s in cand.source_ids):
         return refuse("source_not_found")
     # 5
-    if not any(_grounded(episodes[s], cand.subject, cand.object) for s in cand.source_ids):
+    if not any(episode_mentions(episodes[s], cand.subject, cand.object) for s in cand.source_ids):
         return refuse("ungrounded")
     # 6
     object_label = names.label(cand.object, p.object_labels)
