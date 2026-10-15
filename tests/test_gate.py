@@ -367,6 +367,15 @@ def test_supersedes_marks_the_old_decision(store):
     assert status["ADR-0004"] == "superseded" and status.get("ADR-0011") is None
 
 
+def test_a_superseded_decision_cannot_supersede(store):
+    assert submit_fact(store, Candidate("ADR-0011", "SUPERSEDES", "ADR-0004", "2026-09-10T14:00:00Z", ["PM-03"])).outcome == "ACCEPT"
+    back = submit_fact(store, Candidate("ADR-0004", "SUPERSEDES", "ADR-0011", "2026-09-10T14:00:00Z", ["PM-03"]))
+    assert (back.outcome, back.reasons, back.written) == ("REJECT", ["superseded_decision"], False)
+    status = dict(store.ro("MATCH (d:Decision) RETURN d.id, d.status"))
+    assert status["ADR-0004"] == "superseded" and status.get("ADR-0011") is None
+    assert typed_edges(store, "SUPERSEDES") == 1
+
+
 # ---- order of checks ---------------------------------------------------------------------------------------
 def test_the_first_failing_check_decides(store):
     assert submit_fact(store, cand(object="ana@example.com", source_ids=[])).reasons == ["pii"]

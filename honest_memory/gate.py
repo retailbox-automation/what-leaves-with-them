@@ -231,6 +231,8 @@ def _judge(store: Store, cand: Candidate, episodes: dict, names: _Names) -> _Ver
     same = [(f, object_label) for f in store.current_facts(p.name, cand.subject, cand.object, object_label=object_label)]
     if same:
         return _Verdict(CONFIRM, ["already_current"], object_label, same)
+    if p.name == "SUPERSEDES" and store.ro("MATCH (d:Decision {id: $k}) WHERE d.status = 'superseded' RETURN 1", {"k": cand.subject}):
+        return refuse("superseded_decision")  # a decision that is no longer in force cannot replace another
     # 8
     conflicts = _conflicts(store, p, cand.subject, cand.object)
     if any(valid <= f["valid_at"] for f, _ in conflicts):
