@@ -1,0 +1,429 @@
+"""The write gate: plain code that decides what becomes a fact. No model is involved, ever.
+
+A candidate fact passes the checks of docs/ARCHITECTURE.md in order and the first failing check decides:
+
+    1 predicate in the schema, not forbidden, well-formed time   -> bad_predicate / pii / bad_time
+    2 subject or object looks like personal data                 -> pii
+    3 at least one source id                                     -> no_source (+ conflicts_current)
+    4 every source id is an existing Episode                     -> source_not_found
+    5 one cited episode names both ends                          -> ungrounded
+    6 both ends are known entities of the right label            -> unknown_entity
+    7 the same fact is already current                           -> CONFIRM (source added)
+    8 functional predicate with another current value            -> SUPERSEDE if newer, else older_than_current
+    9 otherwise                                                  -> ACCEPT
+
+Every call, refusals included, writes a GateDecision receipt with CITES edges to the episodes it was given
+and ABOUT edges to the entities it resolved. A receipt never repeats personal data: a refused phone number is
+stored as "[redacted]". Findings and handoffs written by agents go through the same door.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from dataclasses import dataclass, field
+
+from .names import episode_mentions
+from .schema import ENTITY_KEYS, FORBIDDEN_PREDICATES, PREDICATES, Predicate
+from .store import Store, epoch
+
+ACCEPT, CONFIRM, SUPERSEDE, REJECT = "ACCEPT", "CONFIRM", "SUPERSEDE", "REJECT"
+
+# Edge properties owned by the gate: a candidate's attrs may not overwrite them.
+RESERVED = {"valid_at", "invalid_at", "source_ids", "gate_id", "closed_by", "predicate"}
+# Predicates whose edge carries `count`, the number of distinct sources (work items).
+COUNTED = {"WORKED_ON"}
+REDACTED = "[redacted]"
+REDACTED_PII = "[redacted:pii]"
+SNIPPET = 200
+
+
+@dataclass
+class Candidate:
+    subject: str
+    predicate: str
+    object: str
+    valid_at: str  # ISO-8601 with Z
+    source_ids: list[str]
+    proposer: str = "rules"
+    claim_episode: str | None = None  # where the claim was read, when that is not (only) its source
+    attrs: dict = field(default_factory=dict)
+
+
+@dataclass
+class GateResult:
+    outcome: str  # ACCEPT | CONFIRM | SUPERSEDE | REJECT
+    reasons: list[str]
+    receipt_id: str
+    written: bool
+    closed: list[dict] = field(default_factory=list)
+    record_id: str | None = None  # id of the Finding or Handoff that was written
+
+
+# ---- personal data -------------------------------------------------------------------------------------
+
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_DATETIME = re.compile(r"\d{4}-\d\d-\d\d(?:[T ]\d\d:\d\d(?::\d\d)?Z?)?|\d\d:\d\d(?::\d\d)?")
+_NUMBER_RUN = re.compile(r"(?<![\w-])\+?\d[\d\s().-]{5,}\d(?![\w-])")
+_CARD_RUN = re.compile(r"(?<![\w-])\d(?:[ -]?\d){12,18}(?![\w-])")
+_NANP = re.compile(r"1?[2-9]\d{2}[2-9]\d{6}")
+_STREET = re.compile(
+    r"(?<![\w-])\d{1,5}\s+(?:[A-Z][A-Za-z'’-]*\s+){1,3}"
+    r"(?i:street|st|avenue|ave|road|rd|lane|ln|court|ct|drive|dr|boulevard|blvd|way|place|pl|terrace|ter|circle|cir)\b")
+_POBOX = re.compile(r"\bP\.?\s?O\.?\s?Box\s+\d+", re.IGNORECASE)
+
+
+def _luhn(digits: str) -> bool:
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        d = int(ch)
+        if i % 2:
+            d = d * 2 - 9 if d > 4 else d * 2
+        total += d
+    return total % 10 == 0
+
+
+def _phone_like(run: str) -> bool:
+    digits = re.sub(r"\D", "", run)
+    if not 7 <= len(digits) <= 15:
+        return False
+    separators = set(re.sub(r"[\d+]", "", run))
+    if not separators and not run.startswith("+"):
+        return bool(_NANP.fullmatch(digits))  # a bare digit string is a phone only if it is shaped like one
+    if separators == {"."}:
+        return bool(re.fullmatch(r"\d{3}\.\d{3}\.\d{4}", run))  # not a version string or an address
+    return True
+
+
+def detect_pii(text: str) -> list[str]:
+    """Kinds of personal data that look present in `text`: email, phone, address, card. Heuristics, on purpose
+    conservative about dates, ids and version strings."""
+    kinds = []
+    if _EMAIL.search(text):
+        kinds.append("email")
+    scrubbed = _DATETIME.sub(" ", text)
+    if any(_phone_like(m.group()) for m in _NUMBER_RUN.finditer(scrubbed)):
+        kinds.append("phone")
+    if _STREET.search(text) or _POBOX.search(text):
+        kinds.append("address")
+    if any(13 <= len(d) <= 19 and _luhn(d) for d in (re.sub(r"\D", "", m.group()) for m in _CARD_RUN.finditer(scrubbed))):
+        kinds.append("card")
+    return kinds
+
+
+def _redact(value: str) -> str:
+    kinds = detect_pii(value)
+    return f"[redacted:{'+'.join(kinds)}]" if kinds else value
+
+
+def _pii_in(cand: Candidate) -> bool:
+    values = [cand.subject, cand.object, *(v for v in cand.attrs.values() if isinstance(v, str))]
+    return any(detect_pii(v) for v in values)
+
+
+# ---- helpers ---------------------------------------------------------------------------------------------
+
+def _dedupe(ids) -> list[str]:
+    return list(dict.fromkeys(ids))
+
+
+def _stamp(value: str | None) -> int | None:
+    try:
+        return epoch(value)
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def _receipt_id(seq: int, *fields) -> str:
+    digest = hashlib.sha1(json.dumps(fields, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    return f"GD-{seq:05d}-{digest[:10]}"
+
+
+class _Names:
+    """Entity lookups for one gate call, each (label, name) asked of the graph once."""
+
+    def __init__(self, store: Store):
+        self.store, self.cache = store, {}
+
+    def label(self, name: str, labels) -> str | None:
+        for label in labels:
+            if (label, name) not in self.cache:
+                self.cache[(label, name)] = self.store.find_entity(label, name)
+            if self.cache[(label, name)]:
+                return label
+        return None
+
+
+def _about(names: _Names, name: str, preferred) -> tuple[str, str] | None:
+    """(label, name) of the entity a receipt is about, trying the labels the predicate expects first."""
+    if detect_pii(name):
+        return None
+    label = names.label(name, [*preferred, *(l for l in ENTITY_KEYS if l not in preferred)])
+    return (label, name) if label else None
+
+
+def _current(store: Store, p: Predicate, subject: str | None, obj: str | None) -> list[tuple[dict, str]]:
+    """Current edges of a predicate with the label of their object, over every label the object may carry."""
+    return [(f, label) for label in p.object_labels for f in store.current_facts(p.name, subject, obj, object_label=label)]
+
+
+def _conflicts(store: Store, p: Predicate, subject: str, obj: str) -> list[tuple[dict, str]]:
+    if p.functional == "object":
+        return [(f, l) for f, l in _current(store, p, None, obj) if f["subject"] != subject]
+    if p.functional == "subject":
+        return [(f, l) for f, l in _current(store, p, subject, None) if f["object"] != obj]
+    return []
+
+
+@dataclass
+class _Verdict:
+    outcome: str
+    reasons: list[str]
+    object_label: str | None = None
+    current: list[tuple[dict, str]] = field(default_factory=list)  # CONFIRM: the edge; SUPERSEDE: edges to close
+
+
+def _judge(store: Store, cand: Candidate, episodes: dict, names: _Names) -> _Verdict:
+    refuse = lambda *reasons: _Verdict(REJECT, list(reasons))
+    # 1
+    if cand.predicate in FORBIDDEN_PREDICATES:
+        return refuse("pii")
+    p = PREDICATES.get(cand.predicate)
+    if p is None:
+        return refuse("bad_predicate")
+    valid = _stamp(cand.valid_at)
+    if valid is None:
+        return refuse("bad_time")
+    # 2
+    if _pii_in(cand):
+        return refuse("pii")
+    # 3
+    if not cand.source_ids:
+        return refuse("no_source", *(["conflicts_current"] if _conflicts(store, p, cand.subject, cand.object) else []))
+    # 4
+    if any(s not in episodes for s in cand.source_ids):
+        return refuse("source_not_found")
+    # 5
+    if not any(episode_mentions(episodes[s], cand.subject, cand.object) for s in cand.source_ids):
+        return refuse("ungrounded")
+    # 6
+    object_label = names.label(cand.object, p.object_labels)
+    if names.label(cand.subject, [p.subject]) is None or object_label is None:
+        return refuse("unknown_entity")
+    # 7
+    same = [(f, object_label) for f in store.current_facts(p.name, cand.subject, cand.object, object_label=object_label)]
+    if same:
+        return _Verdict(CONFIRM, ["already_current"], object_label, same)
+    # 8
+    conflicts = _conflicts(store, p, cand.subject, cand.object)
+    if any(valid <= f["valid_at"] for f, _ in conflicts):
+        return _Verdict(REJECT, ["older_than_current"], object_label)
+    if conflicts:
+        return _Verdict(SUPERSEDE, ["newer_than_current"], object_label, conflicts)
+    # 9
+    return _Verdict(ACCEPT, ["new_fact"], object_label)
+
+
+# ---- writing receipts and records ---------------------------------------------------------------------------
+
+def _write_receipt(store: Store, receipt_id: str, props: dict, cites: dict[str, list[str]],
+                   about: list[tuple[str, str]], claimed_in: str | None = None) -> None:
+    store.merge_entity("GateDecision", receipt_id, {k: v for k, v in props.items() if v is not None})
+    for label, ids in cites.items():
+        store.link("GateDecision", receipt_id, "CITES", label, ids)
+    if claimed_in:
+        store.link("GateDecision", receipt_id, "CLAIMED_IN", "Episode", [claimed_in])
+    for label in dict.fromkeys(l for l, _ in about):
+        store.link("GateDecision", receipt_id, "ABOUT", label, [n for l, n in about if l == label])
+
+
+def submit_fact(store: Store, cand: Candidate, at: str | None = None) -> GateResult:
+    """Judge one candidate fact, write the receipt, and (unless refused) the fact. `at` is the time the memory
+    learned it; by default the latest episode involved, so replays are deterministic."""
+    ids = _dedupe(cand.source_ids)
+    cand = Candidate(cand.subject, cand.predicate, cand.object, cand.valid_at, ids, cand.proposer,
+                     cand.claim_episode, dict(cand.attrs))
+    episodes = store.records("Episode", _dedupe([*ids, *([cand.claim_episode] if cand.claim_episode else [])]))
+    names = _Names(store)
+    verdict = _judge(store, cand, episodes, names)
+
+    valid = _stamp(cand.valid_at)
+    seq = store.next_sequence("gate")
+    forbidden = cand.predicate in FORBIDDEN_PREDICATES
+    subject, obj = _redact(cand.subject), REDACTED if forbidden else _redact(cand.object)
+    receipt_id = _receipt_id(seq, subject, cand.predicate, obj, cand.valid_at, ids, cand.proposer, cand.claim_episode)
+
+    written, closed = False, []
+    if verdict.outcome != REJECT:
+        p, label = PREDICATES[cand.predicate], verdict.object_label
+        written, closed = _apply(store, p, cand, verdict, label, valid, receipt_id)
+
+    p = PREDICATES.get(cand.predicate)
+    about = [a for a in (_about(names, cand.subject, (p.subject,) if p else ()),
+                         None if forbidden else _about(names, cand.object, p.object_labels if p else ())) if a]
+    stamps = [episodes[i]["ts"] for i in [cand.claim_episode, *ids] if i in episodes and "ts" in episodes[i]]
+    given = _stamp(at) if at else None
+    ts = given if given is not None else (max(stamps) if stamps else valid)
+    claimed = cand.claim_episode if cand.claim_episode in episodes and cand.claim_episode not in ids else None
+    _write_receipt(
+        store, receipt_id,
+        {"id": receipt_id, "ts": ts, "outcome": verdict.outcome, "reasons": verdict.reasons,
+         "predicate": cand.predicate, "subject": subject, "object": obj, "proposer": cand.proposer,
+         "valid_at": valid, "source_ids": ids, "claim_episode": cand.claim_episode},
+        {"Episode": [i for i in ids if i in episodes]}, about, claimed)
+    return GateResult(verdict.outcome, verdict.reasons, receipt_id, written, closed)
+
+
+def _apply(store: Store, p: Predicate, cand: Candidate, verdict: _Verdict, label: str, valid: int,
+           receipt_id: str) -> tuple[bool, list[dict]]:
+    closed: list[dict] = []
+    if verdict.outcome == CONFIRM:
+        edge = verdict.current[0][0]
+        new = [s for s in cand.source_ids if s not in edge["source_ids"]]
+        if new:
+            store.add_fact_source(p.name, cand.subject, cand.object, new, object_label=label)
+            if p.name in COUNTED:
+                store.set_fact_props(p.name, cand.subject, cand.object,
+                                     {"count": len(edge["source_ids"]) + len(new)}, object_label=label)
+        _after_write(store, p, cand)
+        return bool(new), closed
+    for old, old_label in verdict.current:
+        store.close_fact(p.name, old["subject"], old["object"], valid, receipt_id, object_label=old_label)
+        closed.append({"predicate": p.name, "subject": old["subject"], "object": old["object"],
+                       "valid_at": old["valid_at"], "invalid_at": valid, "source_ids": old["source_ids"]})
+    props = {k: v for k, v in cand.attrs.items() if k not in RESERVED}
+    props.update(valid_at=valid, source_ids=cand.source_ids, gate_id=receipt_id)
+    if p.name in COUNTED:
+        props["count"] = len(cand.source_ids)
+    store.create_fact(p.name, cand.subject, cand.object, props, object_label=label)
+    _after_write(store, p, cand)
+    return True, closed
+
+
+def _after_write(store: Store, p: Predicate, cand: Candidate) -> None:
+    if p.name == "SUPERSEDES":  # the replaced decision is no longer in force
+        store.merge_entity("Decision", cand.object, {"status": "superseded"})
+
+
+# ---- findings and handoffs --------------------------------------------------------------------------------------
+
+def _sources(store: Store, ids: list[str]) -> dict[str, list[str]]:
+    """The given ids that exist, by label: Episodes and GateDecisions."""
+    out = {}
+    for label in ("Episode", "GateDecision"):
+        got = store.records(label, ids)
+        out[label] = [i for i in ids if i in got]
+    return out
+
+
+def _found_ids(found: dict[str, list[str]]) -> list[str]:
+    return [i for ids in found.values() for i in ids]
+
+
+def _refuse_record(store: Store, *, reasons: list[str], agent: str, predicate: str, obj: str,
+                   at: int | None, source_ids: list[str], found: dict[str, list[str]],
+                   about: list[tuple[str, str]]) -> GateResult:
+    seq = store.next_sequence("gate")
+    receipt_id = _receipt_id(seq, agent, predicate, obj, at, source_ids)
+    _write_receipt(store, receipt_id,
+                   {"id": receipt_id, "ts": at, "outcome": REJECT, "reasons": reasons, "predicate": predicate,
+                    "subject": agent, "object": obj, "proposer": agent, "valid_at": at, "source_ids": source_ids},
+                   found, about)
+    return GateResult(REJECT, reasons, receipt_id, False)
+
+
+def _accept_record(store: Store, *, label: str, counter: str, prefix: str, props: dict, predicate: str, subject: str,
+                   obj: str, at: int, source_ids: list[str], found: dict[str, list[str]],
+                   about: list[tuple[str, str]], extra=None) -> GateResult:
+    seq = store.next_sequence("gate")
+    receipt_id = _receipt_id(seq, subject, predicate, obj, at, source_ids)
+    record_id = f"{prefix}-{store.next_sequence(counter):05d}"
+    store.merge_entity(label, record_id, {**props, "id": record_id, "ts": at, "gate_id": receipt_id,
+                                         "source_ids": _found_ids(found)})
+    if extra:
+        extra(record_id)
+    _write_receipt(store, receipt_id,
+                   {"id": receipt_id, "ts": at, "outcome": ACCEPT, "reasons": [f"new_{label.lower()}"],
+                    "predicate": predicate, "subject": subject, "object": obj, "proposer": subject, "valid_at": at,
+                    "source_ids": source_ids}, found, about)
+    return GateResult(ACCEPT, [f"new_{label.lower()}"], receipt_id, True, record_id=record_id)
+
+
+def _record_checks(store: Store, text: str, source_ids: list[str], at: str) -> tuple[list[str], int | None, dict]:
+    """The checks findings and handoffs share: time, personal data, sources. Returns (reasons, at, sources found)."""
+    when = _stamp(at)
+    found = _sources(store, source_ids)
+    if when is None:
+        return ["bad_time"], when, found
+    if detect_pii(text):
+        return ["pii"], when, found
+    if not source_ids:
+        return ["no_source"], when, found
+    if not _found_ids(found):
+        return ["source_not_found"], when, found
+    return [], when, found
+
+
+def submit_finding(store: Store, agent: str, session: str, text: str, about: list[str], source_ids: list[str],
+                   at: str) -> GateResult:
+    """Keep what an agent concluded, if it is about known entities, rests on a known source and holds no
+    personal data. Writes (Agent)-[:WROTE]->(Finding), (Finding)-[:ABOUT]->(entity), (Finding)-[:DERIVED_FROM]->(source)."""
+    ids = _dedupe(source_ids)
+    reasons, when, found = _record_checks(store, text, ids, at)
+    names = _Names(store)
+    resolved = [(names.label(n, ENTITY_KEYS), n) for n in about]
+    known = [(l, n) for l, n in resolved if l]
+    if not reasons:
+        reasons = ["no_about"] if not about else ["unknown_entity"] if len(known) < len(about) else []
+    snippet = (REDACTED_PII if "pii" in reasons else text)[:SNIPPET]
+    if reasons:
+        return _refuse_record(store, reasons=reasons, agent=agent, predicate="FINDING", obj=snippet, at=when,
+                              source_ids=ids, found=found, about=known)
+
+    def link(finding_id: str) -> None:
+        store.merge_entity("Agent", agent)
+        store.link("Agent", agent, "WROTE", "Finding", [finding_id])
+        for label in dict.fromkeys(l for l, _ in known):
+            store.link("Finding", finding_id, "ABOUT", label, [n for l, n in known if l == label])
+        for label, sids in found.items():
+            store.link("Finding", finding_id, "DERIVED_FROM", label, sids)
+
+    return _accept_record(store, label="Finding", counter="finding", prefix="FND",
+                          props={"text": text, "session": session, "agent": agent}, predicate="FINDING",
+                          subject=agent, obj=snippet, at=when, source_ids=ids, found=found, about=known, extra=link)
+
+
+def submit_handoff(store: Store, from_: str, to: str, topic: str, note: str, source_ids: list[str],
+                   at: str) -> GateResult:
+    """Pass work on. Parties are Agents (names starting with "agent:" are created on demand), Teams or Persons.
+    Writes a Handoff node with FROM / TO / CITES edges."""
+    ids = _dedupe(source_ids)
+    reasons, when, found = _record_checks(store, f"{topic}\n{note}", ids, at)
+    names = _Names(store)
+
+    def party(name: str, order) -> tuple[str, str] | None:
+        label = "Agent" if name.startswith("agent:") else names.label(name, order)
+        return (label, name) if label else None
+
+    src, dst = party(from_, ("Agent", "Team", "Person")), party(to, ("Agent", "Person", "Team"))
+    known = [x for x in (src, dst) if x and (x[0] != "Agent" or names.label(x[1], ["Agent"]))]
+    if not reasons and not (src and dst):
+        reasons = ["unknown_entity"]
+    obj = (REDACTED_PII if "pii" in reasons else to)[:SNIPPET]
+    if reasons:
+        return _refuse_record(store, reasons=reasons, agent=from_, predicate="HANDOFF", obj=obj, at=when,
+                              source_ids=ids, found=found, about=known)
+
+    def link(handoff_id: str) -> None:
+        for label, name in (src, dst):
+            if label == "Agent":
+                store.merge_entity("Agent", name)
+        store.link("Handoff", handoff_id, "FROM", src[0], [src[1]])
+        store.link("Handoff", handoff_id, "TO", dst[0], [dst[1]])
+        for label, sids in found.items():
+            store.link("Handoff", handoff_id, "CITES", label, sids)
+
+    return _accept_record(store, label="Handoff", counter="handoff", prefix="HND",
+                          props={"topic": topic, "note": note, "status": "open"}, predicate="HANDOFF",
+                          subject=from_, obj=to, at=when, source_ids=ids, found=found, about=[src, dst], extra=link)

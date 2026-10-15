@@ -19,18 +19,21 @@ from pathlib import Path
 
 from . import templates as T
 
-GENERATOR_VERSION = "0.1.0"
+GENERATOR_VERSION = "0.2.0"
 
 START = datetime(2026, 8, 17, tzinfo=timezone.utc)  # Monday of week 1
 END = datetime(2026, 10, 11, 23, 59, 59, tzinfo=timezone.utc)  # end of week 8
 
-TARGETS = {"ticket": 120, "chat": 220, "doc": 40, "question": 60}
+TARGETS = {"ticket": 120, "chat": 220, "doc": 40, "question": 66}  # 60 original + 6 impact questions
 STD_COUNTS = (6, 4, 2, 1)  # work items per person for the top experts of a system
 LEDGER_COUNTS = (10, 7, 5, 3, 2, 1)  # S7: distinct frequencies on ledger-db
 WORK_TICKETS = 95  # of the 132 work items, this many are tickets, the rest chat
 
-KIND_CHANNEL = {"msg": "chat", "TCK": "ticket", "ADR": "doc", "RB": "doc", "PM": "doc", "DOC": "doc"}
-KIND_WIDTH = {"msg": 4, "TCK": 4, "RB": 2, "PM": 2, "DOC": 2}
+KIND_CHANNEL = {"msg": "chat", "TCK": "ticket", "ADR": "doc", "RB": "doc", "PM": "doc", "DOC": "doc",
+                "ARCH": "doc"}
+KIND_WIDTH = {"msg": 4, "TCK": 4, "RB": 2, "PM": 2, "DOC": 2, "ARCH": 2}
+# Dependency material draws from its own stream, so every episode of generator 0.1.0 keeps its text and id.
+DEPS_SEED_OFFSET = 0x9E3779B9
 
 
 def at(week: int, dow: int, hour: int = 15, minute: int = 0) -> datetime:
@@ -107,6 +110,7 @@ class Builder:
     def __init__(self, seed: int):
         self.seed = seed
         self.rng = Rng(seed)
+        self.deps_rng = Rng(seed + DEPS_SEED_OFFSET)
         self.eps: list[Episode] = []
         self.ts_of: dict[str, datetime] = {}
         self.work: dict[str, dict[str, list[str]]] = {s: {} for s in T.SYSTEMS}
@@ -219,6 +223,31 @@ class Builder:
             if num != 9:
                 self.add("msg", ts + timedelta(hours=rng.between(1, 3)), author.name, T.TEAM_CHANNEL[author.team],
                          f"{key} accepted: {title}. Please read it before your next change.", [key])
+
+    # ---- system dependencies ----------------------------------------------
+    def dependencies(self):
+        """Week-1 architecture overview plus ADR-0013, which adds a dependency the overview lacks.
+
+        ADR-0013 has no announcement chat message: one more message would renumber every later one.
+        """
+        lead = self.lead["Platform"]
+        lines = [f"{T.COMPANY} architecture overview ({day(START)}).",
+                 "Each line names a system and the system it needs in order to work.", ""]
+        lines += [f"- {a} depends on {b}." for a, b in T.DEPENDENCIES]
+        self.k["arch"] = self.add("ARCH", at(1, 0, 12, 45), lead.name, "Architecture overview", "\n".join(lines))
+        self.dep_edges = [(a, b, self.k["arch"]) for a, b in T.DEPENDENCIES]
+
+        num, title, draft_w, acc_w, team, ctx, dec, con = T.DEPENDENCY_ADR
+        rng = self.deps_rng
+        author = rng.pick(self.by_team[team])
+        ts = at(acc_w, 3, 15, rng.between(0, 59))
+        key = f"ADR-{num:04d}"
+        text = (f"{key}: {title}\nAuthor: {author.name}\n"
+                f"Draft opened: {day(at(draft_w, 0, 9))}. Status: accepted on {day(ts)}.\n"
+                f"Context: {ctx}\nDecision: {dec}\nConsequences: {con}")
+        self.add("ADR", ts, author.name, f"{key}: {title}", text, key=key)
+        self.dep_adr = {"key": key, "author": author, "title": title, "ts": ts}
+        self.dep_edges.append(("reporting", "billing-api", key))
 
     # ---- postmortems and the incident handoff -----------------------------
     def postmortems(self):
@@ -428,6 +457,15 @@ class Plan:
         self.fact(b.s6_from.name, "HANDOFF_TO", b.handoff_to.name, self.ts[k["s6b"]], [k["s6b"], k["s6a"]],
                   scenario="S6", attrs={"record": "Handoff", "from_team": "Support", "to_team": "Platform",
                                         "ticket": self.i(k["s6b"]), "topic": "duplicate invoice emails"})
+        # team leads: the first role of each team in the roster
+        for team, lead in b.lead.items():
+            self.fact(lead.name, "LEADS", team, self.ts[k["roster"]], [k["roster"]], attrs={"role": lead.role})
+        # S9: the architecture overview; S10: ADR-0013 adds a dependency the gate must accept
+        for a_, b_, src in b.dep_edges:
+            extra = {"expected_gate": {"outcome": "ACCEPT"}} if src != k["arch"] else {}
+            self.fact(a_, "DEPENDS_ON", b_, self.ts[src], [src], scenario="S9" if src == k["arch"] else "S10", **extra)
+        d = b.dep_adr
+        self.fact(d["author"].name, "DECIDED", d["key"], d["ts"], [d["key"]], attrs={"title": d["title"]})
         # adversarial writes the gate must refuse
         self.fact("Growth", "OWNS", "billing-api", self.ts[k["s2"]], [], scenario="S2", claim_episode=self.i(k["s2"]),
                   expected_gate={"outcome": "REJECT", "reasons": ["no_source", "conflicts_current"]})
@@ -544,6 +582,49 @@ class Plan:
         for num in rng.shuffled(sorted(b.adr_author))[:4]:
             self.ask("current_state", f"Who decided ADR-{num:04d} ({b.adr_title[num]})?",
                      f"{b.adr_author[num].name}.", [f"ADR-{num:04d}"])
+        self.impact_questions()
+
+    # -- impact: who depends on a system, and who must be told (appended last so earlier ids keep their numbers)
+    def owner_at(self, system, when):
+        b = self.b
+        return b.new_owner if system == "billing-api" and when >= self.ts["ADR-0009"] else b.owner[system]
+
+    def owner_sources_at(self, system, when):
+        k = self.b.k
+        if system == "billing-api":
+            return ["ADR-0009", k["s1"]] if when >= self.ts["ADR-0009"] else [k["catalog"], k["rb:billing-api"]]
+        return [k["catalog"], k["s5"]] if system == "auth" else [k["catalog"]]
+
+    def upstream(self, system, depth, when, skip=()):
+        """Systems that depend on `system` within `depth` hops: {name: shortest hop count}."""
+        edges = [(a, b) for a, b, src in self.b.dep_edges if self.ts[src] <= when and src not in skip]
+        hops, frontier = {}, {system}
+        for h in range(1, depth + 1):
+            frontier = {a for a, b in edges if b in frontier and a not in hops and a != system}
+            hops.update(dict.fromkeys(frontier, h))
+        return hops
+
+    def impact_questions(self):
+        b, k = self.b, self.b.k
+        d_pre = day(at(4, 3, 0))  # before ADR-0013 (week 5) and before billing-api changes owner (week 6)
+        cases = [("ledger-db", 4, None, "S9"), ("ledger-db", 4, d_pre, "S9"), ("billing-api", 4, None, "S10"),
+                 ("billing-api", 4, d_pre, "S10"), ("ledger-db", 2, None, "S9"), ("status-page", 4, None, "S9")]
+        for system, depth, as_of, scenario in cases:
+            when = END if as_of is None else datetime.fromisoformat(as_of).replace(tzinfo=timezone.utc) + timedelta(days=1)
+            hops = self.upstream(system, depth, when)
+            sources = [k["arch"]]
+            if hops != self.upstream(system, depth, when, skip=(b.dep_adr["key"],)):
+                sources.append(b.dep_adr["key"])
+            items = []
+            for s, h in sorted(hops.items(), key=lambda kv: (kv[1], kv[0])):
+                o = self.owner_at(s, when)
+                items.append(f"{s} (owner {o.name}, {o.team}, {h} hop{'s' if h > 1 else ''})")
+                sources += [x for x in self.owner_sources_at(s, when) if x not in sources]
+            answer = (f"Within {depth} hops: " + "; ".join(items) + "." if items
+                      else f"Nothing: no system depends on {system} within {depth} hops.")
+            when_text = f" as of {as_of}" if as_of else ""
+            self.ask("impact", f"What depends on {system} within {depth} hops{when_text}, and who must be told?",
+                     answer, sources, as_of=as_of, scenario=scenario)
 
 
 # ---- public API -------------------------------------------------------------
@@ -553,6 +634,7 @@ def build(seed: int) -> Corpus:
     b.adrs()
     b.scenarios()  # also sets handoff_to, needed by postmortems
     b.postmortems()
+    b.dependencies()
     b.work_items()
     b.fill_tickets_and_chat()
     idmap = assign_ids(b.eps)
@@ -573,8 +655,8 @@ def dumps(row: dict) -> str:
 def counts(corpus: Corpus) -> dict:
     ids = [e["id"] for e in corpus.episodes]
     by = lambda prefix: sum(1 for i in ids if i.startswith(prefix))
-    return {"chat": by("msg-"), "ticket": by("TCK-"), "doc": by("ADR-") + by("RB-") + by("PM-") + by("DOC-"),
-            "adr": by("ADR-"), "runbook": by("RB-"), "postmortem": by("PM-"), "other_doc": by("DOC-"),
+    return {"chat": by("msg-"), "ticket": by("TCK-"), "doc": by("ADR-") + by("RB-") + by("PM-") + by("DOC-") + by("ARCH-"),
+            "adr": by("ADR-"), "runbook": by("RB-"), "postmortem": by("PM-"), "other_doc": by("DOC-") + by("ARCH-"),
             "episodes": len(ids), "gold_facts": len(corpus.gold), "questions": len(corpus.questions)}
 
 
@@ -602,7 +684,10 @@ Generated by `python -m honest_memory.corpus` (no LLM calls, no network, standar
 
 Same seed gives byte-identical files. WORKED_ON gold facts count the chat messages and tickets
 that name a system without referencing another record; docs do not count.
-Gold rows with `expected_gate` are adversarial writes that a write gate must refuse.
+Gold rows with `expected_gate` are adversarial writes that a write gate must refuse, plus one new
+dependency it must accept. DEPENDS_ON gold facts come from the architecture overview (S9: nine systems, longest
+upstream chain four hops) and ADR-0013 (S10); `impact` questions list the systems that depend on one system,
+with their owners as of the question date.
 """
 
 

@@ -13,7 +13,19 @@ from datetime import datetime, timezone
 
 from falkordb import FalkorDB
 
-from .schema import ENTITY_KEYS, HISTORY_EDGE, INDEXES, PREDICATES, RECORD_KEYS, graph_name
+from .schema import ENTITY_KEYS, HISTORY_EDGE, INDEXES, PREDICATES, RECORD_EDGES, RECORD_KEYS, Predicate, graph_name
+
+
+def _key(label: str) -> str:
+    """Identifying property of a label; KeyError for anything that is not in the schema."""
+    return ENTITY_KEYS.get(label) or RECORD_KEYS[label]
+
+
+def _object_label(p: Predicate, object_label: str | None) -> str:
+    label = object_label or p.object
+    if label not in p.object_labels:
+        raise ValueError(f"{p.name} cannot point at {label!r}; allowed: {p.object_labels}")
+    return label
 
 
 def connect() -> FalkorDB:
@@ -86,51 +98,101 @@ class Store:
     # --- entities and records -------------------------------------------------------------
 
     def merge_entity(self, label: str, key_value: str, props: dict | None = None) -> None:
-        key = ENTITY_KEYS.get(label) or RECORD_KEYS[label]
+        key = _key(label)
         self.rw(f"MERGE (n:{label} {{{key}: $k}}) SET n += $props", {"k": key_value, "props": props or {}})
 
     def find_entity(self, label: str, key_value: str) -> bool:
         key = ENTITY_KEYS[label]
         return bool(self.ro(f"MATCH (n:{label} {{{key}: $k}}) RETURN 1 LIMIT 1", {"k": key_value}))
 
-    # --- facts (gate only) ----------------------------------------------------------------
+    def entity_names(self, label: str) -> list[str]:
+        key = ENTITY_KEYS[label]
+        return [r[0] for r in self.ro(f"MATCH (n:{label}) RETURN n.{key} ORDER BY n.{key}")]
 
-    def current_facts(self, predicate: str, subject: str | None = None, obj: str | None = None) -> list[dict]:
+    def records(self, label: str, ids: list[str]) -> dict[str, dict]:
+        """Properties of the nodes of one label whose key is in `ids`, by key. Missing ids are absent."""
+        key = _key(label)
+        if not ids:
+            return {}
+        rows = self.ro(f"MATCH (n:{label}) WHERE n.{key} IN $ids RETURN n.{key}, properties(n)", {"ids": list(ids)})
+        return {r[0]: r[1] for r in rows}
+
+    def link(self, src_label: str, src_key: str, rel: str, dst_label: str, dst_keys: list[str]) -> None:
+        """MERGE (src)-[:rel]->(dst) for every dst key that exists. Record edges only; safe to repeat."""
+        if rel not in RECORD_EDGES:
+            raise ValueError(f"not a record edge: {rel!r}")
+        sk, dk = _key(src_label), _key(dst_label)
+        if not dst_keys:
+            return
+        self.rw(
+            f"MATCH (a:{src_label} {{{sk}: $a}}) UNWIND $keys AS k MATCH (b:{dst_label} {{{dk}: k}}) "
+            f"MERGE (a)-[:{rel}]->(b)",
+            {"a": src_key, "keys": list(dst_keys)},
+        )
+
+    def next_sequence(self, name: str) -> int:
+        """Per-tenant counter (1, 2, 3, ...), atomic in one query; the gate numbers its receipts with it."""
+        rows = self.rw("MERGE (c:Seq {name: $n}) SET c.value = coalesce(c.value, 0) + 1 RETURN c.value", {"n": name})
+        return rows[0][0]
+
+    # --- facts (gate only) ----------------------------------------------------------------
+    # Every helper takes an optional object_label for predicates whose object may carry more than one
+    # label (LEADS: Team or Project); it defaults to the predicate's own object label.
+
+    def current_facts(self, predicate: str, subject: str | None = None, obj: str | None = None,
+                      object_label: str | None = None) -> list[dict]:
         """Current edges of one predicate, filtered by either end."""
         p = PREDICATES[predicate]
-        sk, ok = ENTITY_KEYS[p.subject], ENTITY_KEYS[p.object]
+        olabel = _object_label(p, object_label)
+        sk, ok = ENTITY_KEYS[p.subject], ENTITY_KEYS[olabel]
         rows = self.ro(
-            f"MATCH (s:{p.subject})-[r:{p.name}]->(o:{p.object}) "
+            f"MATCH (s:{p.subject})-[r:{p.name}]->(o:{olabel}) "
             f"WHERE ($s IS NULL OR s.{sk} = $s) AND ($o IS NULL OR o.{ok} = $o) "
             "RETURN s.%s, o.%s, properties(r)" % (sk, ok),
             {"s": subject, "o": obj},
         )
         return [{"subject": r[0], "object": r[1], **r[2]} for r in rows]
 
-    def create_fact(self, predicate: str, subject: str, obj: str, props: dict) -> None:
+    def create_fact(self, predicate: str, subject: str, obj: str, props: dict, object_label: str | None = None) -> None:
         p = PREDICATES[predicate]
-        sk, ok = ENTITY_KEYS[p.subject], ENTITY_KEYS[p.object]
+        olabel = _object_label(p, object_label)
+        sk, ok = ENTITY_KEYS[p.subject], ENTITY_KEYS[olabel]
         self.rw(
-            f"MATCH (s:{p.subject} {{{sk}: $s}}), (o:{p.object} {{{ok}: $o}}) "
+            f"MATCH (s:{p.subject} {{{sk}: $s}}), (o:{olabel} {{{ok}: $o}}) "
             f"CREATE (s)-[r:{p.name}]->(o) SET r = $props",
             {"s": subject, "o": obj, "props": props},
         )
 
-    def add_fact_source(self, predicate: str, subject: str, obj: str, source_ids: list[str]) -> None:
+    def add_fact_source(self, predicate: str, subject: str, obj: str, source_ids: list[str],
+                        object_label: str | None = None) -> None:
         p = PREDICATES[predicate]
-        sk, ok = ENTITY_KEYS[p.subject], ENTITY_KEYS[p.object]
+        olabel = _object_label(p, object_label)
+        sk, ok = ENTITY_KEYS[p.subject], ENTITY_KEYS[olabel]
         self.rw(
-            f"MATCH (s:{p.subject} {{{sk}: $s}})-[r:{p.name}]->(o:{p.object} {{{ok}: $o}}) "
+            f"MATCH (s:{p.subject} {{{sk}: $s}})-[r:{p.name}]->(o:{olabel} {{{ok}: $o}}) "
             "SET r.source_ids = r.source_ids + [x IN $ids WHERE NOT x IN r.source_ids]",
             {"s": subject, "o": obj, "ids": source_ids},
         )
 
-    def close_fact(self, predicate: str, subject: str, obj: str, invalid_at: int, closed_by: str) -> int:
+    def set_fact_props(self, predicate: str, subject: str, obj: str, props: dict,
+                       object_label: str | None = None) -> None:
+        """Overwrite some properties of a current edge (the gate keeps WORKED_ON.count in step with its sources)."""
+        p = PREDICATES[predicate]
+        olabel = _object_label(p, object_label)
+        sk, ok = ENTITY_KEYS[p.subject], ENTITY_KEYS[olabel]
+        self.rw(
+            f"MATCH (s:{p.subject} {{{sk}: $s}})-[r:{p.name}]->(o:{olabel} {{{ok}: $o}}) SET r += $props",
+            {"s": subject, "o": obj, "props": props},
+        )
+
+    def close_fact(self, predicate: str, subject: str, obj: str, invalid_at: int, closed_by: str,
+                   object_label: str | None = None) -> int:
         """Move a current edge into history: delete the typed edge, write WAS with its properties."""
         p = PREDICATES[predicate]
-        sk, ok = ENTITY_KEYS[p.subject], ENTITY_KEYS[p.object]
+        olabel = _object_label(p, object_label)
+        sk, ok = ENTITY_KEYS[p.subject], ENTITY_KEYS[olabel]
         rows = self.rw(
-            f"MATCH (s:{p.subject} {{{sk}: $s}})-[r:{p.name}]->(o:{p.object} {{{ok}: $o}}) "
+            f"MATCH (s:{p.subject} {{{sk}: $s}})-[r:{p.name}]->(o:{olabel} {{{ok}: $o}}) "
             f"WITH s, o, r, properties(r) AS old "
             f"CREATE (s)-[h:{HISTORY_EDGE}]->(o) SET h = old, h.predicate = $pred, "
             "h.invalid_at = $inv, h.closed_by = $by "
