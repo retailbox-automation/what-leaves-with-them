@@ -26,7 +26,8 @@ trap 'rm -rf "$work"' EXIT
 git clone --quiet --depth 1 --branch "$branch" "$repo" "$work/src"
 commit="$(git -C "$work/src" rev-parse HEAD)"
 printf '%s\n' "$commit" > "$work/src/deploy/COMMIT"
-rm -rf "$work/src/.git"
+# The upload skips gitignored files and deploy/COMMIT is gitignored, so the clone's .gitignore goes too.
+rm -rf "$work/src/.git" "$work/src/.gitignore"
 echo "redeploy: $branch at $commit"
 
 deployments() { zeabur deployment list --service-id "$sid" --env-id "$eid" --json -i=false; }
