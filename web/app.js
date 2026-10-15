@@ -9,14 +9,14 @@
 (() => {
   // ---- configuration ------------------------------------------------------------------------------------------------
   // One-line switch: 'live' asks the API of this server; 'fixtures' reads answers recorded from it (web/fixtures/).
-  const DATA = 'fixtures';
+  const DATA = 'live';
 
   const query = new URLSearchParams(location.search);
   const SOURCE = ['live', 'fixtures'].includes(query.get('data')) ? query.get('data') : DATA;
   const TENANT = /^[A-Za-z0-9_-]{1,64}$/.test(query.get('tenant') || '') ? query.get('tenant') : 'quillfield';
   const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const ms = (t) => (REDUCED ? 0 : t);
-  const DAYS_PER_ANSWER = 3;        // what one written answer costs on the countdown (a game rule, not data)
+  const DAYS_PER_ANSWER = 3;        // what one answer costs on the countdown (a game rule, not data)
   const ASSUMED_NOTICE_DAYS = 14;   // when the graph records no last day for the person
   const W = 1600, H = 900;          // layout space
   const STEP_MS = 170;              // one hop of the depth animation
@@ -227,7 +227,7 @@
   function boundsOf(p) {
     const place = placeOf(p.n);
     const r = regions.get(place.team);
-    if (r) return [r.x0 + 46, r.y0 + 62, r.x1 - 46, r.y1 - 34];
+    if (r) return [r.x0 + 46, r.y0 + 84, r.x1 - 46, r.y1 - 30];
     const g = regions.get('');
     const [hx, hy] = p.home;
     const inGapX = Math.abs(hx - (g.gapX[0] + g.gapX[1]) / 2) < 2, inGapY = Math.abs(hy - (g.gapY[0] + g.gapY[1]) / 2) < 2;
@@ -261,7 +261,7 @@
           if (d2 < 1) { dx = rnd() - 0.5; dy = rnd() - 0.5; d2 = 1; }
           if (d2 > 240 * 240) continue;
           const d = Math.sqrt(d2);
-          let f = (a.team === b.team ? 1800 : 600) / d2;
+          let f = (a.team === b.team ? 1100 : 400) / d2;
           const min = a.r + b.r + 34;
           if (d < min) f += (min - d) * 0.45 / d;
           a.vx += dx * f * 0.5; a.vy += dy * f * 0.5; b.vx -= dx * f * 0.5; b.vy -= dy * f * 0.5;
@@ -275,7 +275,7 @@
         a.vx += dx * k; a.vy += dy * k; b.vx -= dx * k; b.vy -= dy * k;
       }
       for (const p of pts) {
-        const g = p.team ? 0.006 : 0.03;
+        const g = p.team ? 0.03 : 0.03;
         p.vx += (p.home[0] - p.x) * g; p.vy += (p.home[1] - p.y) * g;
         const step = 12 * (0.25 + alpha);
         p.vx = Math.max(-step, Math.min(step, p.vx)); p.vy = Math.max(-step, Math.min(step, p.vy));
@@ -339,6 +339,8 @@
       { selector: 'edge.tail', style: { 'line-color': C.blue, width: 1.5, opacity: 0.5, 'z-index': 9 } },
       { selector: 'edge.snap', style: { 'line-color': C.red, 'line-style': 'dashed', 'line-dash-pattern': [7, 6], width: 2,
         opacity: 0.9, 'z-index': 10 } },
+      { selector: 'edge.snap.weak', style: { width: 1.4, opacity: 0.5 } },
+      { selector: 'edge.snap.after', style: { opacity: 0.22 } },
       { selector: 'edge.snap-s', style: { 'source-distance-from-node': 16 } },
       { selector: 'edge.snap-t', style: { 'target-distance-from-node': 16 } },
       { selector: 'edge.handover', style: { 'line-color': C.green, 'line-style': 'dashed', 'line-dash-pattern': [7, 6], width: 2,
@@ -378,7 +380,10 @@
     if (state.phase === 'game') {
       if (narrow) bottom = h * 0.48 - 8; else right = w - $('game').getBoundingClientRect().width - 24;
     }
-    if (state.phase === 'done' && !narrow) bottom = h - Math.max(70, h * 0.07);
+    if (state.phase === 'done' && !narrow) {
+      bottom = h - Math.max(70, h * 0.07);
+      if (w >= 1100) right = w - $('handoff').getBoundingClientRect().width - 40;
+    }
     return { x: 16, y: top, w: Math.max(100, right - 16), h: Math.max(100, bottom - top) };
   }
 
@@ -416,6 +421,21 @@
     for (const q of p) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop(); lower.push(q); }
     for (const q of p.reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop(); upper.push(q); }
     return lower.slice(0, -1).concat(upper.slice(0, -1));
+  }
+
+  function softHull(points, r) {
+    const ring = [];
+    for (const q of points) for (let k = 0; k < 20; k++) ring.push([q[0] + Math.cos(k * Math.PI / 10) * r * 1.08, q[1] + Math.sin(k * Math.PI / 10) * r]);
+    let h = hull(ring);
+    for (let it = 0; it < 3; it++) {
+      const next = [];
+      for (let i = 0; i < h.length; i++) {
+        const a = h[i], b = h[(i + 1) % h.length];
+        next.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25], [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+      }
+      h = next;
+    }
+    return 'M' + h.map((q) => `${q[0].toFixed(1)},${q[1].toFixed(1)}`).join(' L') + 'Z';
   }
 
   function roundedHull(points, r) {
@@ -476,7 +496,7 @@
         const pan = cy.pan();
         pts.push([pan.x + z * (reg.x0 + (reg.x1 - reg.x0) * 0.24), pan.y + z * (reg.y0 + 40)]);
       }
-      path.setAttribute('d', roundedHull(pts, pad));
+      path.setAttribute('d', softHull(pts, pad));
       const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
       const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad, minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad;
       const lit = g.classList.contains('lit');
@@ -492,7 +512,9 @@
       text.setAttribute('y', (ly + 6).toFixed(1));
       text.setAttribute('text-anchor', 'middle');
       text.setAttribute('fill', color);
-      zoneAnchor.set(team, { x: (minX + maxX) / 2, y: (minY + maxY) / 2, top: minY, label: [minX + (maxX - minX) * 0.24, minY + 30] });
+      const ring = [];
+      for (const q of pts) for (let k = 0; k < 16; k++) ring.push([q[0] + Math.cos(k * Math.PI / 8) * pad, q[1] + Math.sin(k * Math.PI / 8) * pad]);
+      zoneAnchor.set(team, { x: (minX + maxX) / 2, y: (minY + maxY) / 2, top: minY, edge: hull(ring) });
     }
   }
 
@@ -559,11 +581,16 @@
     const svg = $('overlay');
     let html = '';
     for (const [a, b] of links.bridges) {
-      const p = zoneAnchor.get(a), q = zoneAnchor.get(b);
-      if (!p || !q) continue;
-      const mx = (p.x + q.x) / 2 + (q.y - p.y) * 0.18, my = (p.y + q.y) / 2 - (q.x - p.x) * 0.18;
-      html += `<path d="M${p.x},${p.y} Q${mx},${my} ${q.x},${q.y}" fill="none" stroke="${C.red}" stroke-width="2" stroke-dasharray="8 7" stroke-opacity="0.7"/>`
-        + `<circle cx="${p.x}" cy="${p.y}" r="4" fill="${C.red}"/><circle cx="${q.x}" cy="${q.y}" r="4" fill="${C.red}"/>`;
+      const za = zoneAnchor.get(a), zb = zoneAnchor.get(b);
+      if (!za || !zb) continue;
+      const near = (z, t) => z.edge.reduce((m, q) => (Math.hypot(q[0] - t.x, q[1] - t.y) < Math.hypot(m[0] - t.x, m[1] - t.y) ? q : m), z.edge[0]);
+      const p = near(za, zb), q = near(zb, za);
+      const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
+      const ux = (q[0] - p[0]) / (Math.hypot(q[0] - p[0], q[1] - p[1]) || 1), uy = (q[1] - p[1]) / (Math.hypot(q[0] - p[0], q[1] - p[1]) || 1);
+      const g = 14;
+      html += `<path d="M${p[0]},${p[1]} L${mx - ux * g},${my - uy * g} M${mx + ux * g},${my + uy * g} L${q[0]},${q[1]}" fill="none" stroke="${C.red}" stroke-width="2.2" stroke-dasharray="7 6" stroke-opacity="0.85"/>`
+        + `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${C.red}"/><circle cx="${q[0]}" cy="${q[1]}" r="4.5" fill="${C.red}"/>`
+        + `<path d="M${mx - uy * 9 - ux * 4},${my + ux * 9 - uy * 4} L${mx + uy * 9 - ux * 4},${my - ux * 9 - uy * 4} M${mx - uy * 9 + ux * 4},${my + ux * 9 + uy * 4} L${mx + uy * 9 + ux * 4},${my - ux * 9 + uy * 4}" stroke="${C.red}" stroke-width="2.2" stroke-linecap="round"/>`;
     }
     if (links.card) {
       const card = links.card.el.getBoundingClientRect();
@@ -681,7 +708,7 @@
   function setPhase(p) { state.phase = p; app.dataset.phase = p; }
 
   function clearClasses() {
-    cy.elements().removeClass('faded lit tail pick fwd back ghost island single saved succ snap snap-s snap-t');
+    cy.elements().removeClass('faded lit tail pick fwd back ghost island single saved succ snap snap-s snap-t weak after');
     cy.edges('.handover').remove();
     $('zones').querySelectorAll('.zone').forEach((g) => g.classList.remove('lit', 'red'));
     hoverInfo.clear();
@@ -892,18 +919,21 @@
     clearClasses();
     const me = cy.getElementById(person);
     me.addClass('ghost');
-    me.connectedEdges().forEach((e) => e.addClass('snap ' + (e.source().id() === person ? 'snap-s' : 'snap-t')));
+    me.connectedEdges().forEach((e) => e.addClass('snap ' + (e.source().id() === person ? 'snap-s' : 'snap-t')
+      + (e.data('type') === 'WORKED_ON' ? ' weak' : '')));
     cy.elements().not(me).not(me.connectedEdges()).addClass('faded');
 
-    // islands drift away from the middle and glow red
+    // islands drift away from the person, staying inside the drawing, and glow red
+    const homes = [...model.home.values()];
+    const box = { x0: Math.min(...homes.map((q) => q.x)) - 30, x1: Math.max(...homes.map((q) => q.x)) + 30,
+      y0: Math.min(...homes.map((q) => q.y)) + 20, y1: Math.max(...homes.map((q) => q.y)) - 10 };
+    const taken = [];
     for (const it of islandItems) {
       const n = cy.getElementById(it.item);
       if (!n.length) continue;
       n.removeClass('faded').addClass('island drift');
-      const h = model.home.get(it.item);
-      const cx = W / 2, cyy = 455;
-      const dx = h.x - cx, dy = h.y - cyy, d = Math.sqrt(dx * dx + dy * dy) || 1;
-      const to = { x: Math.max(40, Math.min(W - 40, h.x + (dx / d) * 150)), y: Math.max(110, Math.min(H - 90, h.y + (dy / d) * 110)) };
+      const to = driftSpot(it.item, person, box, taken);
+      taken.push(to);
       if (REDUCED) n.position(to); else n.animate({ position: to }, { duration: 900, easing: 'ease-out-cubic' });
       const through = it.through.map((c) => `${c.relation}${c.state === 'ended' ? ' (ended)' : ''}${c.count ? `, ${c.count} records` : ''}`).join('; ');
       hoverInfo.set(it.item, `<div class="red">Without ${esc(first(person))}, nobody in the graph is connected to it.</div>`
@@ -931,6 +961,24 @@
     show('headline', false); show('counters', true); show('actions', true);
     $('plan').focus({ preventScroll: true });
     scheduleSync();
+  }
+
+  function driftSpot(item, person, box, taken) {
+    // away from the person, inside the drawing, and clear of every other node: the first free spot on a widening fan
+    const h = model.home.get(item), from = model.home.get(person);
+    const base = Math.atan2(h.y - from.y, h.x - from.x);
+    const others = [...model.home.entries()].filter(([id]) => id !== item).map(([, q]) => q).concat(taken);
+    let best = null, bestGap = -1;
+    for (const dist of [170, 210, 250, 130]) {
+      for (const turn of [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1]) {
+        const a = base + turn;
+        const q = { x: Math.max(box.x0, Math.min(box.x1, h.x + Math.cos(a) * dist)), y: Math.max(box.y0, Math.min(box.y1, h.y + Math.sin(a) * dist * 0.75)) };
+        const gap = Math.min(...others.map((o) => Math.hypot(o.x - q.x, o.y - q.y)));
+        if (gap >= 80) return q;
+        if (gap > bestGap) { best = q; bestGap = gap; }
+      }
+    }
+    return best;
   }
 
   function setCounter(k, n, label) {
@@ -965,13 +1013,36 @@
   const tips = {};
 
   // ---- 5. the handoff game ------------------------------------------------------------------------------------------
-  function questionFor(line, person) {
-    if (line.question) return line.question;
-    const who = first(person);
-    if (line.item_kind === 'decision') return `${who}, why was ${line.item} decided?`;
-    if (line.item_kind === 'team' || line.item_kind === 'project') return `${who}, who should lead ${line.item} next?`;
-    if (line.candidates && line.candidates.length) return `${who}, what should ${first(line.candidates[0])} know about ${line.item}?`;
-    return `${who}, how does ${line.item} work?`;
+  // Cards: one per item that rested only on the person's records before any handoff (single_source as of their
+  // notice day), plus the plan's other open questions. The question text is the plan's own while it is still open;
+  // for an item the handoff already answered, the plan no longer asks it, so the same question is put from the same
+  // facts (what the decision governs and who owns that). Answering reveals what the graph holds: the CONFIRM receipts
+  // about the item since the notice, the records they cite, and single_source as of the day of those records.
+
+  function governsText(item) {
+    const owner = new Map(model.edges.filter((e) => e.type === 'OWNS').map((e) => [e.target, e.source]));
+    const sys = model.edges.filter((e) => e.type === 'CONSTRAINS' && e.source === item).map((e) => e.target);
+    return sys.map((s) => (owner.get(s) ? `${s} (owner ${owner.get(s)})` : s)).join(', ') || 'the systems it governs';
+  }
+
+  function cardsFor(person, before, planA) {
+    const questions = (planA.rows || []).filter((r) => r.kind === 'question');
+    const open = new Map(questions.filter((q) => q.status === 'open').map((q) => [q.item, q]));
+    const single = (before.rows || []).filter((r) => r.kind !== 'summary' && r.single_source);
+    const cards = single.map((r) => ({
+      item: r.item, item_kind: r.item_kind, title: r.title,
+      question: open.get(r.item)?.question || (r.item_kind === 'decision'
+        ? `Why was ${r.item} decided, and what breaks in ${governsText(r.item)} if it is undone?`
+        : `How is ${r.item} run day to day, and where are the steps written down?`),
+      from: open.has(r.item) ? 'handoff_plan' : 'single_source', why: open.get(r.item)?.why || `Every record behind ${r.item} was written by ${person}.`,
+      sources: r.episodes || [],
+    }));
+    for (const q of questions) {
+      if (q.item_kind === 'gap' || cards.some((c) => c.item === q.item)) continue;  // the phone question is the pill
+      cards.push({ item: q.item, item_kind: q.item_kind, question: q.question, from: 'handoff_plan', why: q.why, sources: q.sources_so_far || [] });
+    }
+    const order = { system: 0, decision: 1 };
+    return cards.sort((a, b) => (order[a.item_kind] ?? 2) - (order[b.item_kind] ?? 2) || a.item.localeCompare(b.item));
   }
 
   async function plan() {
@@ -980,35 +1051,31 @@
     const leave = model.leaving.get(person);
     const before = state.removed.ss;
     const calls = [['handoff_plan', { person }], ['promises', { person }]];
-    const needAfter = Boolean(asOfFor(person, 'single_source'));
-    if (needAfter) calls.push(['single_source', { person }]);
     let results;
     try { results = await Promise.all(calls.map(([n, a]) => api.tool(n, a))); } catch (err) { setStatus(err.message); return; }
     if (my !== state.seq) return;
     record(`Plan the handoff for ${person}`, calls.map(([n, a], i) => toolCall(n, a, results[i])));
     const planA = results[0].body, promisesA = results[1].body;
-    const after = needAfter ? results[2].body : before;
-    const lines = (planA.rows || []).filter((r) => r.kind === 'line');
+    const cards = cardsFor(person, before, planA);
     const total = leave && leave.last_day && leave.notice_at ? daysBetween(day(leave.notice_at), leave.last_day) : ASSUMED_NOTICE_DAYS;
-    state.game = { person, lines, plan: planA, promises: promisesA, before, after, days: total, total, saved: 0, answered: new Set(),
-      assumed: !(leave && leave.last_day), resolved: new Map() };
-
+    state.game = { person, cards, plan: planA, promises: promisesA, before, days: total, total, saved: 0,
+      answered: new Set(), assumed: !(leave && leave.last_day), resolved: new Map(), notice: leave?.notice_at || null };
     setPhase('game');
     show('counters', false); show('actions', false);
     $('headline').textContent = `Ask before ${first(person)} leaves.`;
     show('headline', true);
     show('game', true);
-    $('saved-of').textContent = String(lines.length);
+    $('cards').innerHTML = '';
+    $('saved-of').textContent = String(cards.length);
     renderGame();
-    for (const l of lines) {
-      const n = cy.getElementById(l.item);
+    for (const c of cards) {
+      const n = cy.getElementById(c.item);
       if (n.length && !n.hasClass('island') && !n.hasClass('single')) n.removeClass('faded').addClass('single');
-      hoverInfo.set(l.item, (hoverInfo.get(l.item) || '') + `<div class="k">${esc(l.action || '')}</div>`);
     }
-    state.focus = [person, ...lines.map((l) => l.item), ...lines.flatMap((l) => (l.candidates || []).slice(0, 1))]
-      .filter((id) => cy.getElementById(id).length);
+    state.focus = [person, ...cards.map((c) => c.item)].filter((id) => cy.getElementById(id).length);
     fit(true, state.focus);
     scheduleSync();
+    if (!cards.length) { await sleep(ms(900)); if (state.game && state.game.person === person) finish(); }
   }
 
   function renderGame() {
@@ -1017,80 +1084,109 @@
     $('days').parentElement.lastChild.textContent = ` ${plural(g.days, 'day', 'days')} left`;
     $('days').parentElement.classList.toggle('low', g.days < DAYS_PER_ANSWER);
     $('saved-n').textContent = String(g.saved);
-    $('bar-fill').style.width = g.lines.length ? `${(g.saved / g.lines.length) * 100}%` : '0';
+    $('bar-fill').style.width = g.cards.length ? `${(g.saved / g.cards.length) * 100}%` : '0';
     const box = $('cards');
     if (!box.children.length) {
-      box.innerHTML = '';
-      g.lines.forEach((l, i) => {
+      if (!g.cards.length) {
+        box.innerHTML = `<div class="card empty">Nothing rests only on ${esc(first(g.person))}'s records: no question to ask.</div>`;
+      }
+      g.cards.forEach((c, i) => {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'card';
         b.dataset.i = String(i);
-        b.innerHTML = `<span class="q">${esc(questionFor(l, g.person))}</span>`;
+        b.innerHTML = `<span class="q">${esc(c.question)}</span>`;
         b.addEventListener('click', () => answer(i, b));
-        htmlTip(b, () => `<div><b>${esc(l.item)}</b> <span class="k">${esc(l.item_kind)}</span></div>`
-          + `<div class="k">${esc((l.risk || []).join('; '))}</div><div class="ids">${esc((l.source_ids || []).join(', '))}</div>`
+        htmlTip(b, () => `<div><b>${esc(c.item)}</b> <span class="k">${esc(c.item_kind)}${c.title ? ' · ' + esc(c.title) : ''}</span></div>`
+          + `<div class="k">${esc(c.why || '')}</div><div class="ids">${esc((c.sources || []).slice(0, 6).join(', '))}</div>`
           + (g.assumed ? `<div class="k">No last day is recorded for ${esc(g.person)}: two weeks assumed.</div>` : '')
-          + `<div class="k">Each written answer costs ${DAYS_PER_ANSWER} days.</div>`);
+          + `<div class="k">Each answer costs ${DAYS_PER_ANSWER} days.</div>`);
         box.appendChild(b);
       });
     }
-    box.querySelectorAll('.card').forEach((b) => {
+    box.querySelectorAll('.card[data-i]').forEach((b) => {
       const i = Number(b.dataset.i);
       if (!g.answered.has(i) && g.days < DAYS_PER_ANSWER) { b.classList.add('lost'); b.disabled = true; }
     });
   }
 
-  function newEpisodes(item, g) {
-    const rowOf = (a) => (a.rows || []).find((r) => r.item === item && r.kind !== 'summary');
-    const b = rowOf(g.before), a = rowOf(g.after);
-    if (!b || !a || !b.single_source || a.single_source) return null;
-    const had = new Set(b.episodes || []);
-    return { added: (a.episodes || []).filter((e) => !had.has(e)), authors: a.authors || [] };
+  function linesAbout(text, item) {
+    const re = new RegExp(`(^|[^\\w-])${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w-]|$)`);
+    return String(text || '').split('\n').map((s) => s.replace(/^[-*]\s*/, '').trim()).filter((s) => s && re.test(s));
+  }
+
+  async function writtenAnswer(item, g) {
+    // CONFIRM receipts about the item since the notice, the records they cite, and the item's state as of then
+    if (!g.notice) return null;
+    const rec = await api.confirmReceipts();
+    const receipts = (rec.body.receipts || []).filter((r) => r.outcome === 'CONFIRM' && r.ts > g.notice
+      && (r.subject === item || r.object === item));
+    if (!receipts.length) return { receipts: [], episodes: [], after: null };
+    const ids = [...new Set(receipts.flatMap((r) => r.cites || []))].slice(0, 6);
+    const episodes = (await Promise.all(ids.map((id) => api.episode(id)))).map((r) => r.body).filter((e) => e.ts > g.notice);
+    if (!episodes.length) return { receipts: [], episodes: [], after: null };
+    const asOf = episodes.map((e) => day(e.ts)).sort().pop();
+    const args = { person: g.person, as_of: asOf };
+    const res = await api.tool('single_source', args);
+    record(`Answer about ${item}`, [
+      { name: 'GET /receipts?outcome=confirm', meta: `${receipts.length} about ${item} since ${day(g.notice)}`, queries: [] },
+      toolCall('single_source', args, res)]);
+    const row = (res.body.rows || []).find((r) => r.item === item && r.kind !== 'summary');
+    return { receipts, episodes, after: row || null, asOf };
   }
 
   async function answer(i, card) {
     const g = state.game;
     if (!g || g.answered.has(i) || g.days < DAYS_PER_ANSWER) return;
-    const line = g.lines[i];
+    const c = g.cards[i];
     g.answered.add(i);
     g.days -= DAYS_PER_ANSWER;
     card.disabled = true;
-    const node = cy.getElementById(line.item);
-    const change = newEpisodes(line.item, g);
-    const calls = [];
-    if (change && change.added.length) {
-      let ep = null, receipt = null;
-      try {
-        const eps = await Promise.all(change.added.slice(0, 4).map((id) => api.episode(id)));
-        const pick = eps.find((e) => e.body.author === g.person) || eps[0];
-        ep = pick.body;
-        const rec = await api.confirmReceipts();
-        receipt = (rec.body.receipts || []).find((r) => (r.cites || []).includes(ep.id)) || null;
-      } catch (err) { setStatus(err.message); }
-      g.saved++;
-      g.resolved.set(line.item, { episode: ep, receipt });
-      const text = ep ? ep.text.split('\n').filter((s) => s.trim()).slice(1).join(' ').slice(0, 220) : '';
-      card.classList.add('saved');
-      card.insertAdjacentHTML('beforeend', `<span class="answer">${ep ? `${esc(ep.author)}, ${esc(day(ep.ts))}: <q>${esc(text)}</q>` : ''}</span>`
-        + `<span class="receipt">${receipt ? `${esc(receipt.outcome)} ${esc(receipt.id)}` : esc(change.added.join(', '))}</span>`);
-      if (node.length) {
-        node.removeClass('island single faded').addClass('saved');
-        hoverInfo.set(line.item, `<div class="green">Answered in writing: ${esc(change.added.join(', '))}</div>`
-          + `<div class="k">Records now by: ${esc(change.authors.join(', '))}</div>`);
+    renderGame();
+    let found = null;
+    try { found = await writtenAnswer(c.item, g); } catch (err) { setStatus(err.message); }
+    if (state.game !== g) return;
+    const node = cy.getElementById(c.item);
+    if (found && found.receipts.length) {
+      const mine = found.episodes.filter((e) => e.author === g.person);
+      const others = found.episodes.filter((e) => e.author !== g.person);
+      const said = mine.flatMap((e) => linesAbout(e.text, c.item).map((l) => ({ l, e })))[0];
+      const confirmed = others.filter((e) => linesAbout(e.text, c.item).length);
+      const done = found.after && !found.after.single_source;
+      const ids = found.receipts.map((r) => r.id);
+      const chips = `<span class="receipt" title="${esc(found.receipts.map((r) => `${r.id}: ${r.subject} ${r.predicate} ${r.object}, cites ${r.cites.join(', ')}`).join('\n'))}">`
+        + `${esc(found.receipts[0].outcome)} ${esc(ids[0])}${ids.length > 1 ? ` +${ids.length - 1}` : ''}</span>`;
+      const short = (t) => (t.length > 150 ? t.slice(0, 147).replace(/\s+\S*$/, '') + '…' : t);
+      card.classList.add(done ? 'saved' : 'half');
+      card.insertAdjacentHTML('beforeend',
+        (said ? `<span class="answer"><q>${esc(short(said.l))}</q> <span class="by">${esc(said.e.id)}, ${esc(day(said.e.ts))}</span></span>` : '')
+        + (confirmed.length ? `<span class="answer by">Confirmed by ${esc(confirmed.map((e) => `${e.author} (${e.id})`).join(', '))}.</span>`
+          : `<span class="answer by">Written down, but only by ${esc(first(g.person))}: it still rests on one person.</span>`)
+        + chips);
+      if (done) {
+        g.saved++;
+        g.resolved.set(c.item, { by: [...new Set(confirmed.map((e) => e.author))], episodes: found.episodes.map((e) => e.id), confirmIn: confirmed.map((e) => e.id) });
+        if (node.length) node.removeClass('island single faded').addClass('saved');
+        hoverInfo.set(c.item, `<div class="green">As of ${esc(found.asOf)}, records by ${esc((found.after.authors || []).join(', '))}</div>`
+          + `<div class="ids">${esc((found.after.episodes || []).join(', '))}</div>`);
+        links.card = { el: card, node: c.item };
+      } else {
+        links.card = null;
+        hoverInfo.set(c.item, `<div class="red">As of ${esc(found.asOf)}, every record behind it is still by ${esc(g.person)}.</div>`
+          + `<div class="ids">${esc((found.after?.episodes || []).join(', '))}</div>`);
       }
-      links.card = { el: card, node: line.item };
-      calls.push({ name: 'single_source before and after', meta: `item ${line.item}`, queries: [] });
     } else {
       card.classList.add('empty');
-      const since = model.leaving.get(g.person)?.notice_at;
-      card.insertAdjacentHTML('beforeend', `<span class="answer">Not in the graph: no written answer from ${esc(first(g.person))} about ${esc(line.item)}${since ? ` since ${esc(day(since))}` : ''}.</span>`);
+      card.insertAdjacentHTML('beforeend', `<span class="answer">Not in the graph: no written answer from ${esc(first(g.person))} about ${esc(c.item)}${g.notice ? ` since ${esc(day(g.notice))}` : ''}.</span>`);
       links.card = null;
     }
     renderGame();
+    card.scrollIntoView({ block: 'nearest', behavior: REDUCED ? 'auto' : 'smooth' });
+    $('cards').addEventListener('scroll', scheduleSync, { once: true });
+    setTimeout(scheduleSync, ms(400));
     scheduleSync();
-    const left = g.lines.some((_, k) => !g.answered.has(k)) && g.days >= DAYS_PER_ANSWER;
-    if (!left) { await sleep(ms(1100)); if (state.game === g) finish(); }
+    const left = g.cards.some((_, k) => !g.answered.has(k)) && g.days >= DAYS_PER_ANSWER;
+    if (!left) { await sleep(ms(1600)); if (state.game === g) finish(); }
   }
 
   // ---- end state ----------------------------------------------------------------------------------------------------
@@ -1100,7 +1196,7 @@
     setPhase('done');
     show('game', false); show('headline', false); show('restart', true);
     links.card = null;
-    // counters as of after the answers: an item counts as handed over only if its answer is in the graph
+    // counters after the answers: an item counts as handed over only if the graph says it no longer rests on them
     const decisionsLeft = r.singleDecisions.filter((d) => !g.resolved.has(d.item)).length;
     const islandsLeft = r.islandItems.filter((it) => !g.resolved.has(it.item)).length;
     setCounter('islands', islandsLeft, app.querySelector('.counter[data-k="islands"] span').textContent);
@@ -1110,27 +1206,32 @@
       app.querySelector(`.counter[data-k="${k}"]`).classList.toggle('good', n === 0 && was > 0);
     }
     show('counters', true);
+    cy.edges('.snap').addClass('after');
 
-    // resolved islands come home green; candidates get a dashed green line
     for (const it of r.islandItems) {
       if (!g.resolved.has(it.item)) continue;
       const n = cy.getElementById(it.item);
       n.removeClass('island drift').addClass('saved');
       if (REDUCED) n.position(model.home.get(it.item)); else n.animate({ position: model.home.get(it.item) }, { duration: 800, easing: 'ease-in-out-cubic' });
     }
+    // who takes what: the person who confirmed in writing, else the plan's first candidate (a proposal)
+    const lines = new Map(((g.plan.rows || []).filter((x) => x.kind === 'line')).map((x) => [x.item, x]));
+    const items = [...new Set([...g.cards.map((c) => c.item), ...lines.keys()])];
     const rows = [];
-    for (const l of g.lines) {
-      const to = (l.candidates || [])[0];
-      rows.push(`<div class="hrow"><span>${esc(l.item)}</span><span class="arrow">&rarr;</span><span class="to${to ? '' : ' none'}">${esc(to || 'no one in the graph yet')}</span></div>`);
-      if (to && cy.getElementById(to).length && cy.getElementById(l.item).length) {
-        cy.add({ group: 'edges', data: { id: `handover|${l.item}|${to}`, source: l.item, target: to }, classes: 'handover' });
+    for (const item of items) {
+      const res = g.resolved.get(item);
+      const to = res && res.by.length ? res.by[0] : (lines.get(item)?.candidates || [])[0];
+      const how = res && res.by.length ? `confirmed in ${res.confirmIn.join(', ')}` : to ? 'candidate (proposed)' : '';
+      rows.push(`<div class="hrow"><span>${esc(item)}</span><span class="arrow">&rarr;</span>`
+        + `<span class="to${to ? '' : ' none'}">${esc(to || 'no one in the graph yet')}${res && res.by.length ? ` <small>${esc(res.confirmIn.join(', '))}</small>` : ''}</span></div>`);
+      if (to && cy.getElementById(to).length && cy.getElementById(item).length && !cy.getElementById(`handover|${item}|${to}`).length) {
+        cy.add({ group: 'edges', data: { id: `handover|${item}|${to}`, source: item, target: to }, classes: 'handover' });
         cy.getElementById(to).removeClass('faded').addClass('succ');
-        hoverInfo.set(to, `<div class="green">Candidate for ${esc(l.item)}</div><div class="k">${esc(l.action || '')}</div>`);
+        hoverInfo.set(to, (hoverInfo.get(to) || '') + `<div class="green">${esc(item)}: ${esc(how)}</div>`);
       }
     }
     $('handoff-rows').innerHTML = rows.join('');
-    show('handoff', true);
-    // the honest question
+    show('handoff', rows.length > 0);
     $('ask-promise').textContent = `What did ${first(g.person)} promise the partner on the phone?`;
     $('promise-reply').hidden = true;
     show('promise', true);
