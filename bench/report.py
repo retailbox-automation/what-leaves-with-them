@@ -142,8 +142,10 @@ VARIANTS = (("", "plain-rag", "plain RAG, whole episodes, k=8 (the baseline in R
 
 
 def sensitivity(results_dir: Path) -> str:
+    first = next((json.loads((results_dir / f / "summary.json").read_text(encoding="utf-8"))["meta"]
+                  for f, _, _ in VARIANTS if (results_dir / f / "summary.json").exists()), {})
     lines = ["# Sensitivity runs", "",
-             "The same 66 questions with the baseline made stronger, the other FalkorDB engine and the model's own thinking "
+             f"The same {first.get('questions', '')} questions (corpus generator {first.get('generator_version', '')}) with the baseline made stronger, the other FalkorDB engine and the model's own thinking "
              "left on. Each row is a full run; the files are under `bench/results/<variant>/`. The rows labelled "
              "\"the baseline in RESULTS.md\" and \"the agent in RESULTS.md\" are the ones that file reports.", "",
              "| run | correct % | stale % | unsupported % | no answer % | clean % | median ms | commit |",

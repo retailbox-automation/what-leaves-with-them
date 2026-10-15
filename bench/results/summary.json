@@ -1,16 +1,16 @@
 {
   "meta": {
-    "started": "2026-10-15T19:49:42Z",
-    "finished": "2026-10-15T19:51:40Z",
-    "wall_seconds": 118.1,
+    "started": "2026-10-15T20:54:55Z",
+    "finished": "2026-10-15T20:57:39Z",
+    "wall_seconds": 163.6,
     "seed": 42,
-    "generator_version": "0.2.0",
-    "corpus_sha256": "20891ae56d988f3512325c4e56a58d7eb1bc6724f312a671d18856f8666433f0",
-    "questions": 66,
+    "generator_version": "0.3.0",
+    "corpus_sha256": "7fd55087879c7184b2384a7e4fafbf6ad727c19c4a81c321eed999383f8a5450",
+    "questions": 82,
     "k": 8,
     "chunk": "episode",
     "reasoning": "none",
-    "commit": "c59ae69",
+    "commit": "d3b7579",
     "ollama_version": "0.40.4",
     "models": {
       "chat": {
@@ -34,41 +34,43 @@
       "honest-agent"
     ],
     "ingest": {
-      "tenant": "bench_c9f595aae8",
-      "episodes": 382,
-      "gate_calls": 197,
+      "tenant": "bench_a8902910db",
+      "episodes": 403,
+      "gate_calls": 226,
       "outcomes": {
-        "ACCEPT": 94,
-        "CONFIRM": 98,
+        "ACCEPT": 108,
+        "CONFIRM": 110,
         "SUPERSEDE": 1,
+        "CLOSE": 3,
         "REJECT": 4
       },
       "reasons": {
-        "already_current": 98,
+        "already_current": 110,
         "conflicts_current": 1,
-        "new_fact": 93,
+        "ended": 3,
+        "new_fact": 107,
         "new_handoff": 1,
         "newer_than_current": 1,
         "no_source": 1,
         "older_than_current": 1,
         "pii": 2
       },
-      "seconds": 1.36
+      "seconds": 2.12
     }
   },
   "systems": {
     "plain-rag": {
       "overall": {
-        "n": 66,
-        "correct": 51.5,
-        "correct_literal": 43.9,
-        "correct_sentence_only": 51.5,
-        "stale": 4.5,
+        "n": 82,
+        "correct": 46.3,
+        "correct_literal": 39.0,
+        "correct_sentence_only": 46.3,
+        "stale": 4.9,
         "unsupported": 0.0,
-        "abstained": 31.8,
-        "clean": 51.5,
+        "abstained": 36.6,
+        "clean": 46.3,
         "leaked": 2,
-        "median_ms": 466
+        "median_ms": 513
       },
       "by_type": {
         "adversarial": {
@@ -81,19 +83,55 @@
           "abstained": 0.0,
           "clean": 25.0,
           "leaked": 2,
-          "median_ms": 497
+          "median_ms": 508
         },
-        "current_state": {
-          "n": 23,
-          "correct": 78.3,
-          "correct_literal": 65.2,
-          "correct_sentence_only": 78.3,
+        "bridges": {
+          "n": 2,
+          "correct": 0.0,
+          "correct_literal": 0.0,
+          "correct_sentence_only": 0.0,
           "stale": 0.0,
           "unsupported": 0.0,
-          "abstained": 21.7,
-          "clean": 78.3,
+          "abstained": 100.0,
+          "clean": 0.0,
           "leaked": 0,
-          "median_ms": 406
+          "median_ms": 643
+        },
+        "current_state": {
+          "n": 24,
+          "correct": 79.2,
+          "correct_literal": 62.5,
+          "correct_sentence_only": 79.2,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 20.8,
+          "clean": 79.2,
+          "leaked": 0,
+          "median_ms": 421
+        },
+        "departure_depth1": {
+          "n": 2,
+          "correct": 50.0,
+          "correct_literal": 50.0,
+          "correct_sentence_only": 50.0,
+          "stale": 50.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 50.0,
+          "leaked": 0,
+          "median_ms": 809
+        },
+        "departure_depth4": {
+          "n": 2,
+          "correct": 0.0,
+          "correct_literal": 0.0,
+          "correct_sentence_only": 0.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 50.0,
+          "clean": 0.0,
+          "leaked": 0,
+          "median_ms": 761
         },
         "handoff": {
           "n": 1,
@@ -105,7 +143,19 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 460
+          "median_ms": 446
+        },
+        "handoff_plan": {
+          "n": 1,
+          "correct": 0.0,
+          "correct_literal": 0.0,
+          "correct_sentence_only": 0.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 100.0,
+          "clean": 0.0,
+          "leaked": 0,
+          "median_ms": 798
         },
         "impact": {
           "n": 6,
@@ -117,7 +167,19 @@
           "abstained": 33.3,
           "clean": 16.7,
           "leaked": 0,
-          "median_ms": 574
+          "median_ms": 608
+        },
+        "not_in_graph": {
+          "n": 1,
+          "correct": 100.0,
+          "correct_literal": 100.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 730
         },
         "provenance": {
           "n": 9,
@@ -129,7 +191,19 @@
           "abstained": 22.2,
           "clean": 55.6,
           "leaked": 0,
-          "median_ms": 495
+          "median_ms": 479
+        },
+        "single_source": {
+          "n": 4,
+          "correct": 25.0,
+          "correct_literal": 25.0,
+          "correct_sentence_only": 25.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 25.0,
+          "clean": 25.0,
+          "leaked": 0,
+          "median_ms": 931
         },
         "state_at_time": {
           "n": 7,
@@ -141,7 +215,19 @@
           "abstained": 42.9,
           "clean": 57.1,
           "leaked": 0,
-          "median_ms": 795
+          "median_ms": 582
+        },
+        "successors": {
+          "n": 1,
+          "correct": 0.0,
+          "correct_literal": 0.0,
+          "correct_sentence_only": 0.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 100.0,
+          "clean": 0.0,
+          "leaked": 0,
+          "median_ms": 532
         },
         "what_changed_since": {
           "n": 6,
@@ -153,7 +239,19 @@
           "abstained": 16.7,
           "clean": 66.7,
           "leaked": 0,
-          "median_ms": 650
+          "median_ms": 918
+        },
+        "what_if": {
+          "n": 2,
+          "correct": 0.0,
+          "correct_literal": 0.0,
+          "correct_sentence_only": 0.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 100.0,
+          "clean": 0.0,
+          "leaked": 0,
+          "median_ms": 951
         },
         "who_knows": {
           "n": 10,
@@ -162,23 +260,23 @@
           "correct_sentence_only": 0.0,
           "stale": 0.0,
           "unsupported": 0.0,
-          "abstained": 80.0,
+          "abstained": 90.0,
           "clean": 0.0,
           "leaked": 0,
-          "median_ms": 409
+          "median_ms": 425
         }
       }
     },
     "honest-router": {
       "overall": {
-        "n": 66,
-        "correct": 100.0,
-        "correct_literal": 90.9,
-        "correct_sentence_only": 97.0,
+        "n": 82,
+        "correct": 98.8,
+        "correct_literal": 91.5,
+        "correct_sentence_only": 96.3,
         "stale": 0.0,
         "unsupported": 0.0,
         "abstained": 0.0,
-        "clean": 100.0,
+        "clean": 98.8,
         "leaked": 0,
         "median_ms": 3
       },
@@ -193,10 +291,10 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 3
+          "median_ms": 2
         },
-        "current_state": {
-          "n": 23,
+        "bridges": {
+          "n": 2,
           "correct": 100.0,
           "correct_literal": 100.0,
           "correct_sentence_only": 100.0,
@@ -205,7 +303,43 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 5
+          "median_ms": 14
+        },
+        "current_state": {
+          "n": 24,
+          "correct": 100.0,
+          "correct_literal": 100.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 2
+        },
+        "departure_depth1": {
+          "n": 2,
+          "correct": 100.0,
+          "correct_literal": 100.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 8
+        },
+        "departure_depth4": {
+          "n": 2,
+          "correct": 100.0,
+          "correct_literal": 100.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 12
         },
         "handoff": {
           "n": 1,
@@ -217,7 +351,19 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 28
+          "median_ms": 4
+        },
+        "handoff_plan": {
+          "n": 1,
+          "correct": 0.0,
+          "correct_literal": 0.0,
+          "correct_sentence_only": 0.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 0.0,
+          "leaked": 0,
+          "median_ms": 33
         },
         "impact": {
           "n": 6,
@@ -229,7 +375,19 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 5
+          "median_ms": 3
+        },
+        "not_in_graph": {
+          "n": 1,
+          "correct": 100.0,
+          "correct_literal": 100.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 4
         },
         "provenance": {
           "n": 9,
@@ -241,7 +399,19 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 2
+          "median_ms": 3
+        },
+        "single_source": {
+          "n": 4,
+          "correct": 100.0,
+          "correct_literal": 100.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 5
         },
         "state_at_time": {
           "n": 7,
@@ -255,6 +425,18 @@
           "leaked": 0,
           "median_ms": 2
         },
+        "successors": {
+          "n": 1,
+          "correct": 100.0,
+          "correct_literal": 100.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 8
+        },
         "what_changed_since": {
           "n": 6,
           "correct": 100.0,
@@ -265,7 +447,19 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 3
+          "median_ms": 4
+        },
+        "what_if": {
+          "n": 2,
+          "correct": 100.0,
+          "correct_literal": 100.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 12
         },
         "who_knows": {
           "n": 10,
@@ -283,16 +477,16 @@
     },
     "honest-agent": {
       "overall": {
-        "n": 66,
-        "correct": 90.9,
-        "correct_literal": 72.7,
-        "correct_sentence_only": 84.8,
+        "n": 82,
+        "correct": 90.2,
+        "correct_literal": 73.2,
+        "correct_sentence_only": 85.4,
         "stale": 0.0,
         "unsupported": 0.0,
         "abstained": 0.0,
-        "clean": 90.9,
+        "clean": 90.2,
         "leaked": 0,
-        "median_ms": 712
+        "median_ms": 750
       },
       "by_type": {
         "adversarial": {
@@ -305,19 +499,55 @@
           "abstained": 0.0,
           "clean": 75.0,
           "leaked": 0,
-          "median_ms": 765
+          "median_ms": 892
         },
-        "current_state": {
-          "n": 23,
+        "bridges": {
+          "n": 2,
           "correct": 100.0,
-          "correct_literal": 60.9,
+          "correct_literal": 100.0,
           "correct_sentence_only": 100.0,
           "stale": 0.0,
           "unsupported": 0.0,
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 528
+          "median_ms": 633
+        },
+        "current_state": {
+          "n": 24,
+          "correct": 100.0,
+          "correct_literal": 62.5,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 529
+        },
+        "departure_depth1": {
+          "n": 2,
+          "correct": 50.0,
+          "correct_literal": 50.0,
+          "correct_sentence_only": 50.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 50.0,
+          "leaked": 0,
+          "median_ms": 785
+        },
+        "departure_depth4": {
+          "n": 2,
+          "correct": 0.0,
+          "correct_literal": 0.0,
+          "correct_sentence_only": 0.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 0.0,
+          "leaked": 0,
+          "median_ms": 1376
         },
         "handoff": {
           "n": 1,
@@ -329,19 +559,43 @@
           "abstained": 0.0,
           "clean": 0.0,
           "leaked": 0,
-          "median_ms": 5022
+          "median_ms": 1525
         },
-        "impact": {
-          "n": 6,
-          "correct": 50.0,
-          "correct_literal": 16.7,
-          "correct_sentence_only": 50.0,
+        "handoff_plan": {
+          "n": 1,
+          "correct": 0.0,
+          "correct_literal": 0.0,
+          "correct_sentence_only": 0.0,
           "stale": 0.0,
           "unsupported": 0.0,
           "abstained": 0.0,
-          "clean": 50.0,
+          "clean": 0.0,
           "leaked": 0,
-          "median_ms": 1525
+          "median_ms": 2921
+        },
+        "impact": {
+          "n": 6,
+          "correct": 83.3,
+          "correct_literal": 33.3,
+          "correct_sentence_only": 83.3,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 83.3,
+          "leaked": 0,
+          "median_ms": 1452
+        },
+        "not_in_graph": {
+          "n": 1,
+          "correct": 100.0,
+          "correct_literal": 100.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 716
         },
         "provenance": {
           "n": 9,
@@ -353,7 +607,19 @@
           "abstained": 0.0,
           "clean": 88.9,
           "leaked": 0,
-          "median_ms": 760
+          "median_ms": 784
+        },
+        "single_source": {
+          "n": 4,
+          "correct": 100.0,
+          "correct_literal": 75.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 1208
         },
         "state_at_time": {
           "n": 7,
@@ -365,19 +631,43 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 718
+          "median_ms": 742
+        },
+        "successors": {
+          "n": 1,
+          "correct": 100.0,
+          "correct_literal": 0.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 850
         },
         "what_changed_since": {
           "n": 6,
           "correct": 100.0,
-          "correct_literal": 83.3,
+          "correct_literal": 100.0,
           "correct_sentence_only": 66.7,
           "stale": 0.0,
           "unsupported": 0.0,
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 976
+          "median_ms": 1251
+        },
+        "what_if": {
+          "n": 2,
+          "correct": 100.0,
+          "correct_literal": 100.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 728
         },
         "who_knows": {
           "n": 10,
@@ -389,7 +679,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 714
+          "median_ms": 700
         }
       }
     }
