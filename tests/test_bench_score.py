@@ -215,3 +215,111 @@ def test_unseen_question_types_and_odd_gold_rows_are_scored_by_the_same_rules(tr
     refusal = {**q, "type": "not_in_graph", "answer": "The graph holds nothing about that."}
     assert score(refusal, "The memory has no record of that.", "", t)["correct"]
     assert not score(refusal, "Luca Ostrander does.", "Luca Ostrander", t)["correct"]
+
+
+# --- corpus 0.3.0: the departure questions ----------------------------------------------------------------------
+# Each test pairs a text the rule must accept with one it must still catch, so the rule cannot pass by being loose.
+# The scorer takes no system name: a sentence gets the same verdict from whichever system wrote it.
+
+ROUTER_Q070 = ("At depth 1, Oskar Alvarez: fernhill-sso (owner, ended 2026-10-09), oncall-runbook (owner, ended "
+               "2026-10-09), Platform (member, ended 2026-10-09). Within 2 hops, 3 more at risk: auth (2 hops via "
+               "ADR-0016, owner Pavel Hollis, Platform); ledger-db (2 hops via ADR-0014, owner Mateo Sandoval, Payments); "
+               "reporting (2 hops via ADR-0015, owner Aiko Rademacher, Growth).")
+
+
+def test_ended_inside_a_parenthesis_marks_a_closed_value_as_past(truth, questions):
+    ended = verdict(truth, questions, "Q070", ROUTER_Q070)
+    assert ended["correct"] and not ended["stale"]
+    present = verdict(truth, questions, "Q070", ROUTER_Q070.replace("(member, ended 2026-10-09)", "(member)")
+                      .replace("Platform (member).", "Platform (member). Oskar Alvarez is a member of Platform."))
+    assert present["stale"] and present["stale_values"][0]["value"] == "Platform"
+
+
+def test_leave_and_left_are_past_markers_and_owns_is_not(truth, questions):
+    assert not verdict(truth, questions, "Q067", "Oskar Alvarez's ownership of fernhill-sso and oncall-runbook and his "
+                                                  "place in the Platform team leave with him.")["stale"]
+    assert not verdict(truth, questions, "Q067", "Oskar Alvarez left; fernhill-sso, oncall-runbook and Platform "
+                                                  "go with him.")["stale"]
+    caught = verdict(truth, questions, "Q067", "Oskar Alvarez owns the systems fernhill-sso and oncall-runbook.")
+    assert caught["stale"] and caught["stale_values"][0]["kind"] == "closed"
+
+
+def test_naming_the_person_the_question_is_about_is_not_a_claim_about_what_they_own(truth, questions):
+    for sentence in ("2 items rest only on records written by Oskar Alvarez: fernhill-sso (DOC-14); oncall-runbook (RB-10).",
+                     "Without Oskar Alvarez, nobody in the graph is connected to: fernhill-sso (through OWNS, WORKED_ON); "
+                     "oncall-runbook (through OWNS, WORKED_ON).",
+                     "Questions to ask Oskar Alvarez: who besides Oskar Alvarez can confirm what DOC-17 says about "
+                     "fernhill-sso?"):
+        assert not verdict(truth, questions, "Q075", sentence)["stale"], sentence
+    for sentence in ("Oskar Alvarez owns fernhill-sso.", "fernhill-sso is owned by Oskar Alvarez.",
+                     "Oskar Alvarez is the owner of fernhill-sso."):
+        assert verdict(truth, questions, "Q075", sentence)["stale"], sentence
+    # a rumour stays wrong at any time and needs no relation wording
+    assert verdict(truth, questions, "Q041", "Yes, billing-api is owned by Growth (msg-0174).")["stale"]
+
+
+def test_a_nothing_now_gold_is_met_by_saying_the_items_ended(truth, questions):
+    ended = verdict(truth, questions, "Q068", "At depth 1, Oskar Alvarez: fernhill-sso (owner, ended 2026-10-09), "
+                                              "oncall-runbook (owner, ended 2026-10-09), Platform (member, ended 2026-10-09).")
+    assert ended["correct"] and not ended["stale"]
+    assert verdict(truth, questions, "Q068", "Nothing now: fernhill-sso, oncall-runbook and Platform no longer apply.")["correct"]
+    present = verdict(truth, questions, "Q068", "Oskar Alvarez is a Security Engineer in the Platform team and owns "
+                                                "fernhill-sso and oncall-runbook.")
+    assert not present["correct"] and present["stale"]
+    # past tense alone is not an explicit statement that nothing is current
+    tense = verdict(truth, questions, "Q068", "Oskar Alvarez owned fernhill-sso and oncall-runbook and was a member of "
+                                              "the Platform team.")
+    assert not tense["correct"] and not tense["stale"]
+    # the allowance exists only where the gold itself says the items ended
+    assert not verdict(truth, questions, "Q066", "status-page was closed last week.")["correct"]
+
+
+def test_items_the_gold_rules_out_are_not_required_but_must_not_be_claimed(truth, questions):
+    assert verdict(truth, questions, "Q071", "The systems that rest only on records written by Oskar Alvarez are "
+                                             "fernhill-sso and oncall-runbook.")["correct"]
+    plain = verdict(truth, questions, "Q071", "The decisions and systems that rest only on records written by Oskar "
+                                              "Alvarez are ADR-0014 (ledger-db), ADR-0015 (reporting), fernhill-sso, "
+                                              "and oncall-runbook.")
+    assert not plain["correct"] and {x["value"] for x in plain["excluded_values"]} == {"ADR-0014", "ADR-0015"}
+    router = verdict(truth, questions, "Q071", "2 items rest only on records written by Oskar Alvarez: fernhill-sso "
+                                               "(DOC-14); oncall-runbook (RB-10). Checked, with records by others: ADR-0014 "
+                                               "(Oskar Alvarez, Viktor Hartwell); ADR-0015 (Oskar Alvarez, Viktor "
+                                               "Hartwell); ADR-0016 (Pavel Hollis).")
+    assert router["correct"] and not router["excluded_values"]
+    refusing = verdict(truth, questions, "Q071", "fernhill-sso and oncall-runbook; ADR-0014 is not only Oskar Alvarez's.")
+    assert refusing["correct"]
+    assert not verdict(truth, questions, "Q071", "fernhill-sso only.")["correct"]
+    # the plain reading still wants every name the gold mentions
+    assert not verdict(truth, questions, "Q071", "fernhill-sso and oncall-runbook.")["correct_literal"]
+
+
+def test_a_not_in_the_graph_gold_is_not_an_exclusion(truth, questions):
+    v = verdict(truth, questions, "Q081", "Not in the graph: no record naming Oskar Alvarez after 2026-09-25 records a "
+                                          "promise to Fernhill Outfitters.")
+    assert v["correct"] and not v["excluded_values"]
+    assert truth.exclusions(questions["Q081"]) == set()
+
+
+def test_a_basis_in_parentheses_is_a_reason_not_an_answer(truth, questions):
+    agent = ("Lars Thorne, Pavel Hollis, and Sana Petrov are candidates to take over fernhill-sso, but no one in the "
+             "graph has worked on oncall-runbook.")
+    v = verdict(truth, questions, "Q079", agent)
+    assert v["correct"] and "auth" not in v["required"] and not v["correct_literal"]
+    assert verdict(truth, questions, "Q079", agent + " (6 on auth)")["correct_literal"]
+    assert not verdict(truth, questions, "Q079", agent.replace("Pavel Hollis, and ", ""))["correct"]
+    assert not verdict(truth, questions, "Q079", "Lars Thorne, Pavel Hollis, and Sana Petrov could take over "
+                                                 "fernhill-sso.")["correct"]
+
+
+def test_the_scorer_does_not_know_which_system_answered(truth, questions):
+    text = "Oskar Alvarez owns fernhill-sso and oncall-runbook."
+    a, b = verdict(truth, questions, "Q068", text, "records A"), verdict(truth, questions, "Q068", text, "tool rows B")
+    assert {k: a[k] for k in ("correct", "stale", "leaked")} == {k: b[k] for k in ("correct", "stale", "leaked")}
+
+
+def test_succeeding_a_previous_owner_marks_that_owner_as_past(truth, questions):
+    for sentence in ("Luca Ostrander has owned billing-api since 2026-09-22, succeeding Sana Petrov (ADR-0009).",
+                     "Luca Ostrander took over from Sana Petrov as the owner of billing-api (ADR-0009).",
+                     "Luca Ostrander replaced Sana Petrov as the owner of billing-api (ADR-0009)."):
+        assert not verdict(truth, questions, "Q042", sentence)["stale"], sentence
+    assert verdict(truth, questions, "Q042", "Sana Petrov owns billing-api and it is current (RB-05).")["stale"]
