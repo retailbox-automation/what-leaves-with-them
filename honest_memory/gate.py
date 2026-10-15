@@ -2,15 +2,27 @@
 
 A candidate fact passes the checks of docs/ARCHITECTURE.md in order and the first failing check decides:
 
-    1 predicate in the schema, not forbidden, well-formed time   -> bad_predicate / pii / bad_time
-    2 subject or object looks like personal data                 -> pii
+    1 predicate in the schema, not forbidden, well-formed time,
+      names up to 200 characters                                 -> bad_predicate / pii / bad_time / bad_name
+    2 subject or object looks like personal data; attrs limited
+      to role, title and note as short strings                   -> pii / bad_attrs
     3 at least one source id                                     -> no_source (+ conflicts_current)
-    4 every source id is an existing Episode                     -> source_not_found
-    5 one cited episode names both ends                          -> ungrounded
+    4 every source id is an existing Episode, none newer than
+      the episode the claim was read in                          -> source_not_found / source_after_claim
+    5 one line of a cited episode names both ends, with the
+      relation's word (own, team, lead, depend, ...)             -> ungrounded
     6 both ends are known entities of the right label            -> unknown_entity
-    7 the same fact is already current                           -> CONFIRM (source added)
-    8 functional predicate with another current value            -> SUPERSEDE if newer, else older_than_current
+    7 the same fact is already current                           -> CONFIRM (source added; an exact repeat only
+                                                                    bumps `repeats` on the first receipt)
+    8 functional predicate with another current value            -> SUPERSEDE if newer, else older_than_current;
+      a claim newer than its evidence, a closed fact without new
+      evidence, a superseded decision superseding                -> valid_after_source / closed_fact /
+                                                                    superseded_decision
     9 otherwise                                                  -> ACCEPT
+
+Findings and handoffs: the agent id must look like agent:name, personal data is looked for in text, topic, note,
+agent, session and party names, a cited receipt must not be a refusal (source_rejected), and nothing may be dated
+before the sources it cites (source_after_claim).
 
 Every call, refusals included, writes a GateDecision receipt with CITES edges to the episodes it was given
 and ABOUT edges to the entities it resolved. A receipt never repeats personal data: a refused phone number is
