@@ -264,6 +264,21 @@ def test_a_chat_message_cannot_create_entities(db, corpus):
         s.drop()
 
 
+def test_a_late_episode_still_links_to_entities_a_previous_run_created(db, corpus):
+    s = Store(db, f"test_ingest_{os.getpid()}_late")
+    s.drop()
+    s.ensure_schema()
+    try:
+        ingest_episode(s, next(e for e in corpus["episodes"] if e["title"] == "Service catalog"), RuleExtractor())
+        late = {"id": "msg-9998", "ts": "2026-09-02T10:00:00Z", "channel": "chat", "author": "Sana Petrov",
+                "title": "#payments", "refs": [], "text": "billing-api is quiet today."}
+        assert ingest_episode(s, late, RuleExtractor()) == []  # a new extractor, an existing graph
+        got = s.ro("MATCH (:Episode {id: 'msg-9998'})-[:MENTIONS]->(x) RETURN labels(x)[0], x.name")
+        assert got == [["System", "billing-api"]]
+    finally:
+        s.drop()
+
+
 def test_no_personal_data_in_receipts_or_edges(corpus, store):
     secrets = [g["object"] for g in corpus["gold_facts"] if g["predicate"] in ("HAS_PHONE", "HAS_ADDRESS")]
     assert len(secrets) == 2

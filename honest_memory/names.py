@@ -18,8 +18,10 @@ def mentions(text: str, name: str) -> bool:
 
 
 def episode_mentions(episode: dict, *names: str) -> bool:
-    """True when one episode names every given name: in its text, its title or as its author."""
-    haystack = "\n".join(str(episode.get(k) or "") for k in ("text", "title", "author"))
+    """True when one episode names every given name: in its text, its title or as its author.
+    A chat message's title is its channel (#payments), which says where it was posted, not what it says."""
+    title = "" if episode.get("channel") == "chat" else episode.get("title")
+    haystack = "\n".join(str(v or "") for v in (episode.get("text"), title, episode.get("author")))
     return all(mentions(haystack, n) for n in names)
 
 

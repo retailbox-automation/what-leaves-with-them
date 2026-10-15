@@ -224,6 +224,16 @@ def test_grounding_is_case_insensitive_and_counts_the_author(store):
     assert submit_fact(store, cand(source_ids=["msg-0200"])).outcome == "ACCEPT"
 
 
+def test_a_chat_channel_name_does_not_ground_a_fact_but_a_ticket_title_does(store):
+    store.merge_entity("Episode", "msg-0300", {"ts": 1, "channel": "chat", "author": "Ana", "title": "#payments",
+                                               "text": "Lunch is at noon."})
+    store.merge_entity("Episode", "TCK-0300", {"ts": 1, "channel": "ticket", "author": "Ana", "title": "Payments sync",
+                                               "text": "Lunch is at noon."})
+    chat = submit_fact(store, cand(predicate="MEMBER_OF", object="Payments", source_ids=["msg-0300"]))
+    ticket = submit_fact(store, cand(predicate="MEMBER_OF", object="Payments", source_ids=["TCK-0300"]))
+    assert (chat.reasons, ticket.outcome) == (["ungrounded"], "ACCEPT")
+
+
 def test_both_ends_must_appear_in_one_episode_not_spread_over_two(store):
     store.merge_entity("Episode", "msg-0201", {"ts": 1, "author": "Cy", "title": "", "text": "Ana is busy."})
     store.merge_entity("Episode", "msg-0202", {"ts": 2, "author": "Cy", "title": "", "text": "auth is flaky."})

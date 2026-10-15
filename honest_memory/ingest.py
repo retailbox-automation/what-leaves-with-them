@@ -48,7 +48,9 @@ def ingest_episode(store: Store, episode: dict, extractor: RuleExtractor) -> lis
     for decl in extractor.entities(episode):
         store.merge_entity(decl.label, decl.key, decl.props)
     store.link("Episode", episode["id"], "REFERS_TO", "Episode", episode["refs"])
-    found = extractor.known.find(f"{episode.get('title', '')}\n{episode['text']}")
+    # A chat message's title is its channel (#payments), not something it talks about.
+    title = "" if episode["channel"] == "chat" else episode.get("title", "")
+    found = extractor.known.find(f"{title}\n{episode['text']}")
     for label in MENTIONED:
         store.link("Episode", episode["id"], "MENTIONS", label, [n for l, n in found if l == label])
 
