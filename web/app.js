@@ -333,7 +333,8 @@
         'transition-property': T + ', source-distance-from-node, target-distance-from-node', 'transition-duration': ms(280),
       } },
       { selector: 'edge.faded', style: { opacity: 0.12 } },
-      { selector: 'edge.lit', style: { 'line-color': C.blue, width: 2.4, opacity: 1, 'z-index': 10 } },
+      { selector: 'edge.lit', style: { 'line-color': C.blue, width: 2.4, opacity: 1, 'z-index': 10, 'underlay-color': C.blue,
+        'underlay-opacity': 0.18, 'underlay-padding': 4 } },
       { selector: 'edge.lit.fwd', style: { 'target-arrow-shape': 'triangle' } },
       { selector: 'edge.lit.back', style: { 'source-arrow-shape': 'triangle' } },
       { selector: 'edge.tail', style: { 'line-color': C.blue, width: 1.5, opacity: 0.5, 'z-index': 9 } },
@@ -435,6 +436,14 @@
       }
       h = next;
     }
+    const xs = h.map((q) => q[0]), ys = h.map((q) => q[1]);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const rx = (Math.max(...xs) - Math.min(...xs)) / 2, ry = (Math.max(...ys) - Math.min(...ys)) / 2;
+    h = h.map(([x, y]) => {
+      const a = Math.atan2((y - cy) / (ry || 1), (x - cx) / (rx || 1));
+      const ex = cx + Math.cos(a) * rx, ey = cy + Math.sin(a) * ry;
+      return [x * 0.55 + ex * 0.45, y * 0.55 + ey * 0.45];
+    });
     return 'M' + h.map((q) => `${q[0].toFixed(1)},${q[1].toFixed(1)}`).join(' L') + 'Z';
   }
 
@@ -500,12 +509,13 @@
       const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
       const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad, minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad;
       const lit = g.classList.contains('lit');
+      const hint = g.classList.contains('reached');
       const red = g.classList.contains('red');
-      const stroke = red ? C.red : lit ? C.blue : color;
+      const stroke = red ? C.red : lit || hint ? C.blue : color;
       path.setAttribute('fill', color);
       path.setAttribute('fill-opacity', lit ? '0.13' : '0.075');
       path.setAttribute('stroke', stroke);
-      path.setAttribute('stroke-opacity', lit || red ? '0.75' : '0.28');
+      path.setAttribute('stroke-opacity', lit || red ? '0.75' : hint ? '0.4' : '0.28');
       const lx = reg ? cy.pan().x + z * (reg.x0 + (reg.x1 - reg.x0) * 0.24) : minX + (maxX - minX) * 0.24;
       const ly = reg ? cy.pan().y + z * (reg.y0 + 40) : minY + 34;
       text.setAttribute('x', lx.toFixed(1));
@@ -716,7 +726,7 @@
   function clearClasses() {
     cy.elements().removeClass('faded lit tail pick fwd back ghost island single saved succ snap snap-s snap-t weak after');
     cy.edges('.handover').remove();
-    $('zones').querySelectorAll('.zone').forEach((g) => g.classList.remove('lit', 'red'));
+    $('zones').querySelectorAll('.zone').forEach((g) => g.classList.remove('lit', 'red', 'reached'));
     hoverInfo.clear();
     links.bridges = [];
     links.card = null;
@@ -812,13 +822,14 @@
     const prev = state.shown;
     const want = new Map();     // element id -> {ele, cls, dir, delay}
     const zones = new Set();
+    const reached = new Set();
     const notes = new Map();
     for (const s of segmentsOf(answer, person)) {
       const r = resolveSegment(s);
       if (!r) continue;
       const delay = Math.max(0, s.step - prev - 1) * STEP_MS;
       const note = rowNote(s.row);
-      if (r.zone) { zones.add(r.zone); continue; }
+      if (r.zone) { (s.tail ? reached : zones).add(r.zone); continue; }
       const cls = s.tail ? 'tail' : 'lit';
       const prevE = want.get(r.edge.id());
       if (!prevE || (prevE.cls === 'tail' && cls === 'lit')) want.set(r.edge.id(), { ele: r.edge, cls, dir: r.dir, delay });
@@ -849,7 +860,11 @@
       };
       if (w.delay && !REDUCED) setTimeout(apply, w.delay); else apply();
     }
-    $('zones').querySelectorAll('.zone').forEach((g) => g.classList.toggle('lit', zones.has(g.querySelector('text').textContent)));
+    $('zones').querySelectorAll('.zone').forEach((g) => {
+      const t = g.querySelector('text').textContent;
+      g.classList.toggle('lit', zones.has(t));
+      g.classList.toggle('reached', !zones.has(t) && reached.has(t));
+    });
     state.shown = d;
     scheduleSync();
   }
@@ -1229,7 +1244,7 @@
       const to = res && res.by.length ? res.by[0] : (lines.get(item)?.candidates || [])[0];
       const how = res && res.by.length ? `confirmed in ${res.confirmIn.join(', ')}` : to ? 'candidate (proposed)' : '';
       rows.push(`<div class="hrow"><span>${esc(item)}</span><span class="arrow">&rarr;</span>`
-        + `<span class="to${to ? '' : ' none'}">${esc(to || 'no one in the graph yet')}${res && res.by.length ? ` <small>${esc(res.confirmIn.join(', '))}</small>` : ''}</span></div>`);
+        + `<span class="to${to ? '' : ' none'}">${esc(to || (['team', 'project'].includes(lines.get(item)?.item_kind) ? 'a new lead, to be named' : 'no one in the graph yet'))}${res && res.by.length ? ` <small>${esc(res.confirmIn.join(', '))}</small>` : ''}</span></div>`);
       if (to && cy.getElementById(to).length && cy.getElementById(item).length && !cy.getElementById(`handover|${item}|${to}`).length) {
         cy.add({ group: 'edges', data: { id: `handover|${item}|${to}`, source: item, target: to }, classes: 'handover' });
         cy.getElementById(to).removeClass('faded').addClass('succ');
