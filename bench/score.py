@@ -53,7 +53,8 @@ ABSTAIN = re.compile(r"\b(?:do(?:es)? not (?:contain|mention|say|include|provide
 ENDED = re.compile(r"\b(?:ended|ending|until|till|no longer|formerly|previously|used to|closed|left|leaves?|leaving|"
                    r"departed|departing|resigned)\b", re.I)
 PAST = re.compile(ENDED.pattern[:-3] + r"|before|previous|prior|former|earlier|originally|stale|outdated|out of date|"
-                  r"superseded|replaced|moved|transfer\w*|handed over|changed|claim\w*|rumou?r\w*|alleg\w*|disputed|"
+                  r"superseded|replaced|replaces|replacing|succeed\w*|predecessor|(?:took|taking|takes) over from|moved|transfer\w*|"
+                  r"handed over|changed|claim\w*|rumou?r\w*|alleg\w*|disputed|"
                   r"backup|but|however|although|though|whereas)\b|\bfrom \d{4}-\d{2}-\d{2} (?:to|until)\b", re.I)
 # What a sentence says about an item the gold excludes ("Not ADR-0014: ...") when it names it without claiming it.
 OTHERS = re.compile(r"\bothers?\b|\bbesides\b|\bsomeone else\b|\banyone else\b|\bmore than one\b|\bshared\b|\balso\b", re.I)

@@ -315,3 +315,11 @@ def test_the_scorer_does_not_know_which_system_answered(truth, questions):
     text = "Oskar Alvarez owns fernhill-sso and oncall-runbook."
     a, b = verdict(truth, questions, "Q068", text, "records A"), verdict(truth, questions, "Q068", text, "tool rows B")
     assert {k: a[k] for k in ("correct", "stale", "leaked")} == {k: b[k] for k in ("correct", "stale", "leaked")}
+
+
+def test_succeeding_a_previous_owner_marks_that_owner_as_past(truth, questions):
+    for sentence in ("Luca Ostrander has owned billing-api since 2026-09-22, succeeding Sana Petrov (ADR-0009).",
+                     "Luca Ostrander took over from Sana Petrov as the owner of billing-api (ADR-0009).",
+                     "Luca Ostrander replaced Sana Petrov as the owner of billing-api (ADR-0009)."):
+        assert not verdict(truth, questions, "Q042", sentence)["stale"], sentence
+    assert verdict(truth, questions, "Q042", "Sana Petrov owns billing-api and it is current (RB-05).")["stale"]
