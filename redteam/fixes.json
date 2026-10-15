@@ -96,5 +96,17 @@
   "change": "The pattern starts only at the head of a word run; 20,000 characters now take about 1 ms. A timing test guards it.",
   "attacks": [],
   "commit": "3faaee7"
+ },
+ {
+  "n": 11,
+  "hole": "The CLOSE path (submit_end) reused the checks of an assertion. The catalog, the roster or the charter that says a person owns, belongs to or leads something ended it just as well as a last-day record; a record titled 'Last day: Pavel Hollis' whose only line was about Lars Thorne ended Pavel's ownership (the title was counted as naming him); an end could be dated years ahead (the person 'leaves' in 2030) or weeks before its record (rewriting who owned a system in between).",
+  "change": "An end must come from a line that names both ends and says 'no longer' (or 'steps down'), with the title kept out; its date may not be after the newest record that states it (valid_after_source) nor more than a day before it (end_before_source). Checks on already-ended and never-existing facts were already right and are untouched.",
+  "attacks": [
+   "E02",
+   "E03",
+   "E05",
+   "E06"
+  ],
+  "commit": "f65b708"
  }
 ]

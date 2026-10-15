@@ -430,10 +430,16 @@ def selftest(port: int, attacks: list[dict], corpus: Path) -> int:
 # ---- report -----------------------------------------------------------------------------------------------
 
 def load_results(label: str, out_dir: Path) -> dict[str, dict]:
-    docs = {}
+    docs: dict[str, dict] = {}
     for path in sorted(out_dir.glob(f"{label}-*.json")):
         doc = json.loads(path.read_text(encoding="utf-8"))
-        docs[doc["engine"]] = doc
+        if doc["engine"] in docs:  # first-run-close-<engine>.json adds the attacks that were appended after the first run
+            old = docs[doc["engine"]]
+            old["attacks"] += [a for a in doc["attacks"] if a["id"] not in {x["id"] for x in old["attacks"]}]
+            old["score"] = {"passed": sum(a["pass"] for a in old["attacks"]), "total": len(old["attacks"])}
+            old["commits"] = [old.get("commits", [old["repo_commit"]])[0], doc["repo_commit"]]
+        else:
+            docs[doc["engine"]] = doc
     return docs
 
 
@@ -452,15 +458,17 @@ def write_report(out_dir: Path) -> None:
              "| Run | " + " | ".join(f"FalkorDB {e}" for e in engines) + " |", "|---|" + "---|" * len(engines)]
     for title, docs in (("First run, gate as found", first), ("Final", final)):
         row = [f"{docs[e]['score']['passed']}/{docs[e]['score']['total']}" if e in docs else "-" for e in engines]
-        commit = next((d["repo_commit"] for d in docs.values()), "")
-        lines.append(f"| {title} (repo `{commit}`) | " + " | ".join(row) + " |")
+        commits = next((d.get("commits") or [d["repo_commit"]] for d in docs.values()), [])
+        lines.append(f"| {title} (repo `{'`, `'.join(dict.fromkeys(commits))}`) | " + " | ".join(row) + " |")
     ctl = [c for d in final.values() for c in d.get("controls", [])]
     if ctl:
         lines += ["", "Harness controls (they must behave as labelled or the table below means nothing): "
                   + ", ".join(f"{c['id']} {'ok' if c['ok'] else 'BROKEN'}" for c in {c['id']: c for c in ctl}.values()) + "."]
-    lines += ["", "## The 30 attacks", "",
+    count = len(next(iter((final or first).values()))["attacks"])
+    lines += ["", f"## The {count} attacks", "",
               "Expected is what the gate must answer and leave behind; got is what it answered. Pass needs the right outcome and "
-              "reasons on every step and a graph that changed only where allowed. First run = the gate before any fix.", "",
+              "reasons on every step and a graph that changed only where allowed. First run = the gate before any fix; E01-E06 were "
+              "appended after main (the CLOSE path) was merged, and their first run is against that merged gate.", "",
               "| # | Class | Attack | Expected | Got on the first run | First | Got now | Now |", "|---|---|---|---|---|---|---|---|"]
     base = final or first
     ids = [a["id"] for a in next(iter(base.values()))["attacks"]]
