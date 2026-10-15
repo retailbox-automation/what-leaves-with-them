@@ -39,11 +39,23 @@ the company except what the tools return.
 claim an effect that the rows do not show.
 - When you have the rows, reply with ONE plain sentence that uses only names, dates and record ids that appear in \
 the tool results. Never invent systems, people, ids or dates.
-- Write to the memory (remember, handoff) only when the user asks you to."""
+- Write to the memory (remember, handoff) only when the user asks you to.
+When someone leaves (or goes on leave, or moves team), these tools answer what goes with them:
+- what_leaves: what the person owns, leads and belongs to (depth 1), and at depth 2-4 the decisions they made that \
+govern systems other people own; ask for depth 1 and depth 4 to show the difference.
+- single_source: decisions and systems whose every source record this one person wrote.
+- without: what nobody would be connected to without this person.
+- bridges: who links teams; the only per-person score, about paths, not worth.
+- successors: who worked on each orphaned item or next to it; say "candidates", never "the successor".
+- handoff_plan: one list with an action per line; set propose=true only when the user asks to write the handoffs.
+- promises: promises in the written records since a date; phone calls are not recorded, so none found means \
+not in the graph."""
 
 NO_TOOL = ("I have no tool for that question. I can answer who owns a system now or on a date, its ownership history, "
            "whom to call, what depends on it, who worked on it, how a decision evolved, why the memory holds or "
-           "refused a fact, what changed since a date, how two things connect, and what agents remembered.")
+           "refused a fact, what changed since a date, how two things connect, what agents remembered, and what "
+           "leaves with a person who goes: what they hold, what rests only on them, who links teams, who could take "
+           "over, a handoff plan, and what they promised in writing.")
 
 
 class LLMUnavailable(RuntimeError):

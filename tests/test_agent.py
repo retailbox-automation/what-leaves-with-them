@@ -174,3 +174,11 @@ def test_default_local_model_calls_the_right_tool(fx_store):
     run = Agent(fx_store, config=AgentConfig(model=AG.DEFAULT_MODEL)).ask("Who currently owns billing-api?")
     assert run.mode == "llm" and run.answers[0].tool == "current_owner"
     assert run.answers[0].args == {"system": "billing-api"} and "Luca Ostrander" in run.sentence
+
+
+def test_the_system_prompt_names_every_departure_tool_in_one_line_each():
+    from honest_memory.agent import SYSTEM_PROMPT
+    from honest_memory.departure import DEPARTURE_TOOLS
+    lines = SYSTEM_PROMPT.splitlines()
+    for tool in DEPARTURE_TOOLS:
+        assert sum(1 for line in lines if line.startswith(f"- {tool.name}:")) == 1, tool.name

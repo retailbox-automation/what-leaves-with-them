@@ -115,5 +115,5 @@ def test_answer_serialises_to_json():
 
 def test_gate_outcomes_map_to_what_agents_see():
     assert A.GATE_OUTCOMES == {"ACCEPT": "accepted", "CONFIRM": "confirmed", "SUPERSEDE": "superseded",
-                               "REJECT": "refused"}
-    assert set(A.OUTCOMES) == set(A.READ_OUTCOMES) | set(A.WRITE_OUTCOMES) and len(A.OUTCOMES) == 8
+                               "REJECT": "refused", "CLOSE": "closed"}
+    assert set(A.OUTCOMES) == set(A.READ_OUTCOMES) | set(A.WRITE_OUTCOMES) and len(A.OUTCOMES) == 9

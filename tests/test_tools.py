@@ -38,6 +38,18 @@ CASES = [
     ("recall", {"entity": "billing-api"}, A.ANSWERED_FROM_MEMORY),
     ("recall", {"entity": "auth"}, A.NOT_IN_GRAPH),
     ("facts_about", {"entity": "Aiko Rademacher", "predicate": "MEMBER_OF"}, A.ANSWERED_WITH_PATH),
+    # N5, the departure tools, on the same small graph (the seed-42 departure is in tests/test_departure.py)
+    ("what_leaves", {"person": "Mateo Sandoval", "depth": 1}, A.ANSWERED_WITH_PATH),
+    ("what_leaves", {"person": "Nobody Atall"}, A.UNKNOWN_ENTITY),
+    ("single_source", {"person": "Selma Marsh"}, A.ANSWERED_WITH_PATH),
+    ("single_source", {"person": "Pavel Hollis"}, A.NOT_IN_GRAPH),
+    ("without", {"person": "Selma Marsh"}, A.ANSWERED_WITH_PATH),
+    ("without", {"person": "Sana Petrov"}, A.NOT_IN_GRAPH),
+    ("bridges", {"top": 3}, A.ANSWERED_WITH_PATH),
+    ("successors", {"person": "Mateo Sandoval"}, A.ANSWERED_WITH_PATH),
+    ("successors", {"person": "Sana Petrov"}, A.NOT_IN_GRAPH),
+    ("handoff_plan", {"person": "Mateo Sandoval"}, A.ANSWERED_WITH_PATH),
+    ("promises", {"person": "Priya Farrow"}, A.NOT_IN_GRAPH),
 ]
 
 
@@ -229,7 +241,9 @@ def test_what_changed_lists_learned_closed_and_refused(fx_store):
     ans = call(fx_store, "what_changed", since="2026-09-01", predicate="OWNS")
     assert [(r["change"], r["subject"]) for r in ans.rows] == [
         ("learned", "Luca Ostrander"), ("closed", "Sana Petrov"), ("refused", "Growth"), ("refused", "Sana Petrov")]
-    assert [r.id for r in ans.receipts] == ["gd-0100", "gd-0101"]
+    assert [r.id for r in ans.receipts] == ["gd-0100", "gd-0101", "gd-0900"]  # refusals, then the closing receipt
+    closed = next(r for r in ans.rows if r["change"] == "closed")
+    assert closed["closed_by"] == "SUPERSEDE" and "ADR-0009" in closed["source_ids"]
 
 
 def test_what_changed_nothing_but_refused_claims_is_not_in_graph(fx_store):
@@ -333,7 +347,7 @@ def test_trace_rows_carry_tool_args_ms_rows_and_the_cypher(fx_store):
 
 def test_tool_schemas_describe_every_tool():
     schemas = T.tool_schemas()
-    assert [s["name"] for s in schemas] == list(T.TOOLS) and len(schemas) == 14
+    assert [s["name"] for s in schemas] == list(T.TOOLS) and len(schemas) == 21  # 14 + 7 departure tools (N5)
     depth = next(s for s in schemas if s["name"] == "impact")["parameters"]["properties"]["depth"]
     assert (depth["type"], depth["minimum"], depth["maximum"], depth["default"]) == ("integer", 1, 4, 4)
     for s in schemas:

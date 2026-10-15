@@ -40,6 +40,15 @@ RIGHT_TOOLS = [
     (r"^Who leads the project", {"facts_about"}),
     (r"^What depends on", {"impact"}),
     (r"^Who decided ADR", {"facts_about", "decision_trail"}),
+    # N5, a departure
+    (r"^What leaves with|^What does .* own, lead or belong to|^Which decisions of .* govern", {"what_leaves"}),
+    (r"rest only on records|^What does only .* know", {"single_source"}),
+    (r"connected to without|becomes an island", {"without"}),
+    (r"bridge between teams|only person linking", {"bridges"}),
+    (r"^Who could take over", {"successors"}),
+    (r"handoff plan", {"handoff_plan"}),
+    (r"^Did .* promise", {"promises"}),
+    (r"^Who owns .* now\?", {"current_owner"}),
 ]
 
 
@@ -71,6 +80,16 @@ def test_router_picks_the_right_tool_for_every_corpus_question():
     ("What changed since 2026-09-20?", "what_changed", {"since": "2026-09-20"}),
     ("Who owns billing-api as of 2026-09-01?", "owner_at", {"system": "billing-api", "date": "2026-09-01"}),
     ("What do we know about Selma Marsh?", "facts_about", {"entity": "Selma Marsh"}),
+    ("What do we lose if Oskar Alvarez leaves, 2 hops out?", "what_leaves", {"person": "Oskar Alvarez", "depth": 2}),
+    ("What leaves with Oskar Alvarez as of 2026-10-01?", "what_leaves",
+     {"person": "Oskar Alvarez", "as_of": "2026-10-01"}),
+    ("Who are the top 5 bridges between teams?", "bridges", {"top": 5}),
+    ("What did Oskar Alvarez promise Fernhill Outfitters since 2026-09-01?", "promises",
+     {"person": "Oskar Alvarez", "to": "Fernhill Outfitters", "since": "2026-09-01"}),
+    ("Did Lars Thorne promise anything?", "promises", {"person": "Lars Thorne"}),
+    ("Who could replace Sana Petrov?", "successors", {"person": "Sana Petrov"}),
+    ("What rests only on records written by Sana Petrov as of 2026-09-10?", "single_source",
+     {"person": "Sana Petrov", "as_of": "2026-09-10"}),
 ])
 def test_router_handles_other_phrasings(question, tool, args):
     r = route(question)
@@ -143,6 +162,9 @@ def test_gold_questions_answered_with_the_gold_names(gold_store):
     assert result["right_tool"] == result["n"], summary
     assert not any(r["phone_leak"] for r in result["rows"])
     assert result["all"] >= result["n"] - 2, summary
+    n5 = [r for r in result["rows"] if r["id"] in {q["id"] for q in QUESTIONS if q["scenario"] == "N5"}]
+    assert len(n5) == 14 and all(r["right_tool"] and r["names"] and r["sources"] for r in n5), \
+        [(r["id"], r["missing_names"], r["missing_sources"]) for r in n5 if not (r["names"] and r["sources"])]
 
 
 def test_adversarial_questions_are_answered_honestly(gold_store):
@@ -152,8 +174,13 @@ def test_adversarial_questions_are_answered_honestly(gold_store):
     assert current["since"].startswith("2026-09-22")
     pii = T.call(gold_store, "why", {"subject": "TCK-0044", "predicate": "HAS_PHONE"})
     assert pii.rows[0]["reasons"] == ["pii"] and pii.rows[0]["subject"] == "[personal data]"
-    unchanged = T.call(gold_store, "what_changed", {"since": "2026-09-23", "predicate": "OWNS"})
-    assert unchanged.outcome == A.NOT_IN_GRAPH and "refused" in unchanged.note
+    after = T.call(gold_store, "what_changed", {"since": "2026-09-23", "predicate": "OWNS"})
+    # corpus 0.3.0: the only ownership changes after 2026-09-23 are the two the leaver's last day ends; the rumour
+    # that Growth owns billing-api is still refused, not a change
+    assert {(r["change"], r["subject"], r["object"]) for r in after.rows if r["change"] != "refused"} == {
+        ("closed", "Oskar Alvarez", "fernhill-sso"), ("closed", "Oskar Alvarez", "oncall-runbook")}
+    assert all(r["closed_by"] == "CLOSE" for r in after.rows if r["change"] == "closed")
+    assert ("refused", "Growth", "billing-api") in {(r["change"], r["subject"], r["object"]) for r in after.rows}
 
 
 if __name__ == "__main__":  # python tests/test_router.py [port]  -> the accuracy report
