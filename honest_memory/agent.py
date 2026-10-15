@@ -25,7 +25,9 @@ from .router import route
 from .store import Store
 
 DEFAULT_BASE_URL = "http://localhost:11434/v1"
-# Chosen by trying the local models on five corpus questions (see docs/MCP.md and the lane report).
+# Chosen on five corpus questions against the ingested corpus (call the right tool, sentence passes the check):
+# gemma4 26b 5/5 and 5/5, warm 2.1 s per question over 15 runs, all correct; qwen3.6 35b 5/5, 3.6 s warm;
+# qwen3.8 27b 5/5, 65 s cold; nemotron-3-nano 4/5, 158 s. Re-run: python -m honest_memory.agent compare.
 DEFAULT_MODEL = "gemma4:26b-a4b-it-qat"
 MAX_CALLS = 4
 
