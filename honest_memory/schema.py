@@ -17,6 +17,7 @@ ENTITY_KEYS = {
     "System": "name",
     "Decision": "id",
     "Agent": "name",
+    "Project": "name",      # led by a Person (LEADS); from the project charters
 }
 
 # Record labels written by the memory itself.
@@ -29,6 +30,11 @@ RECORD_KEYS = {
 
 HISTORY_EDGE = "WAS"
 
+# Edge types between records and entities, written by the gate and the ingest step. CLAIMED_IN points
+# from a receipt to the episode a refused claim was read in, when that episode is not one of its sources.
+RECORD_EDGES = frozenset({"MENTIONS", "REFERS_TO", "CITES", "ABOUT", "CLAIMED_IN",
+                          "WROTE", "DERIVED_FROM", "FROM", "TO"})
+
 
 @dataclass(frozen=True)
 class Predicate:
@@ -39,6 +45,12 @@ class Predicate:
     # "subject": at most one current object per subject (one team per person).
     # None: many current edges may coexist (a person works on many systems).
     functional: str | None = None
+    # Other labels the object may carry (a Person leads a Team or a Project).
+    object_alt: tuple[str, ...] = ()
+
+    @property
+    def object_labels(self) -> tuple[str, ...]:
+        return (self.object, *self.object_alt)
 
 
 PREDICATES = {
@@ -46,7 +58,7 @@ PREDICATES = {
     for p in (
         Predicate("OWNS", "Person", "System", functional="object"),
         Predicate("MEMBER_OF", "Person", "Team", functional="subject"),
-        Predicate("LEADS", "Person", "Team", functional="object"),
+        Predicate("LEADS", "Person", "Team", functional="object", object_alt=("Project",)),
         Predicate("WORKED_ON", "Person", "System"),
         Predicate("DECIDED", "Person", "Decision"),
         Predicate("SUPERSEDES", "Decision", "Decision"),
