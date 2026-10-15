@@ -15,7 +15,7 @@ from honest_memory.schema import ENTITY_KEYS, PREDICATES
 from honest_memory.store import Store, epoch
 
 PORTS = [int(p) for p in os.environ.get("HM_TEST_PORTS", "6379").split(",")]
-SEED = 42
+SEED = int(os.environ.get("CORPUS_TEST_SEED", "42"))
 REASONS = {"new_fact", "already_current", "newer_than_current", "new_handoff",
            "pii", "no_source", "conflicts_current", "older_than_current"}
 
@@ -231,7 +231,9 @@ def test_episodes_link_to_what_they_refer_to_and_mention(corpus, store):
     stored = {tuple(r) for r in store.ro("MATCH (a:Episode)-[:REFERS_TO]->(b:Episode) RETURN a.id, b.id")}
     assert stored == refs and len(refs) > 30
     query = "MATCH (:Episode {id: $e})-[:MENTIONS]->(x) RETURN labels(x)[0], coalesce(x.name, x.id)"
-    chat = {tuple(r) for r in store.ro(query, {"e": "msg-0148"})}
+    s1_chat = next(s for s in next(g for g in gold_rows(corpus, scenario="S1", predicate="OWNS")
+                                   if not g["invalid_at"])["source_ids"] if s.startswith("msg-"))
+    chat = {tuple(r) for r in store.ro(query, {"e": s1_chat})}
     adr = {tuple(r) for r in store.ro(query, {"e": "ADR-0009"})}
     assert ("System", "billing-api") in chat
     assert {("Decision", "ADR-0009"), ("System", "billing-api"), ("Team", "Payments")} <= adr

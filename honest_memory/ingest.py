@@ -24,7 +24,6 @@ from unittest import mock
 
 from .extract import RuleExtractor
 from .gate import GateResult, submit_fact, submit_handoff
-from .schema import ENTITY_KEYS
 from .store import Store, connect, epoch
 
 MENTIONED = ("Person", "Team", "System", "Decision", "Project")

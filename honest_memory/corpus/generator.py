@@ -590,7 +590,7 @@ class Plan:
         return b.new_owner if system == "billing-api" and when >= self.ts["ADR-0009"] else b.owner[system]
 
     def owner_sources_at(self, system, when):
-        b, k = self.b, self.b.k
+        k = self.b.k
         if system == "billing-api":
             return ["ADR-0009", k["s1"]] if when >= self.ts["ADR-0009"] else [k["catalog"], k["rb:billing-api"]]
         return [k["catalog"], k["s5"]] if system == "auth" else [k["catalog"]]
