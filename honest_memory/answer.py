@@ -130,8 +130,8 @@ def allowed_text(answer: Answer) -> str:
     return json.dumps(blob, ensure_ascii=False, default=str)
 
 
-def check_sentence(sentence: str, answer: Answer, known_names) -> tuple[bool, str]:
-    """Accept a sentence only if everything it names is in the answer.
+def check_sentence(sentence: str, answer: Answer, known_names, *, asked: str = "") -> tuple[bool, str]:
+    """Accept a sentence only if everything it names is in the answer (or in the question, `asked`).
 
     Rejects: a graph entity that is absent from the answer; a system-like name, record id or
     date that the answer does not contain (invented); a person name that mixes known first and
@@ -140,7 +140,7 @@ def check_sentence(sentence: str, answer: Answer, known_names) -> tuple[bool, st
     text = sentence.strip()
     if not text:
         return False, "empty sentence"
-    allowed = allowed_text(answer)
+    allowed = allowed_text(answer) + " " + asked
     names = sorted(set(known_names), key=len, reverse=True)
     absent = [n for n in names if _mentions(text, n) and not _mentions(allowed, n)]
     if absent:
