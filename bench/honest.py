@@ -32,7 +32,8 @@ def _evidence(run: AgentRun) -> str:
 
 
 def _row(run: AgentRun) -> dict:
-    out = {"answer": run.sentence, "mode": run.mode, "rule": run.rule, "outcome": run.outcome,
+    cited = list(dict.fromkeys(src.id for a in run.answers for src in a.sources))
+    out = {"answer": run.sentence, "cited": cited, "mode": run.mode, "rule": run.rule, "outcome": run.outcome,
            "sentence_source": run.sentence_source, "check": run.check, "rejected": run.rejected,
            "trace": _tool_trace(run), "evidence": _evidence(run), "errors": run.errors, "ms": run.ms}
     if any(a.tool in WRITE_TOOLS for a in run.answers):
@@ -44,14 +45,15 @@ class Honest:
     """One tenant graph on one FalkorDB, filled through the gate, queried by the router and by the agent."""
 
     def __init__(self, corpus: Corpus, host: str, port: int, model: str, base_url: str = BASE_URL,
-                 keep: bool = False):
+                 keep: bool = False, reasoning: str | None = None):
         self.corpus, self.keep = corpus, keep
         self.db = FalkorDB(host=host, port=port, socket_timeout=30, socket_connect_timeout=10)
         self.tenant = f"bench_{uuid.uuid4().hex[:10]}"
         self.store = Store(self.db, self.tenant)
         self.router = Agent(self.store, name="agent:bench-router", config=AgentConfig(model=None))
         self.agent = Agent(self.store, name="agent:bench-llm", config=AgentConfig(base_url=base_url, model=model,
-                                                                                  api_key=os.environ.get("HM_LLM_API_KEY", "ollama")))
+                                                                                  api_key=os.environ.get("HM_LLM_API_KEY", "ollama"),
+                                                                                  reasoning_effort=reasoning))
         self.ingest_summary: dict = {}
 
     @property

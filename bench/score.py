@@ -45,7 +45,7 @@ REFUSAL = re.compile(r"\b(?:no|nothing|none|never|cannot|can't|unable|not|refus\
                      r"unverified|unsourced)\b|n't\b", re.I)
 PAST = re.compile(r"\b(?:before|previous(?:ly)?|prior|formerly|former|earlier|originally|until|till|used to|no longer|"
                   r"stale|outdated|out of date|superseded|replaced|moved|transfer\w*|handed over|changed|closed|"
-                  r"claim\w*|rumou?r\w*|alleg\w*|disputed|backup)\b|\bfrom \d{4}-\d{2}-\d{2} (?:to|until)\b", re.I)
+                  r"claim\w*|rumou?r\w*|alleg\w*|disputed|backup|but|however|although|though|whereas)\b|\bfrom \d{4}-\d{2}-\d{2} (?:to|until)\b", re.I)
 
 
 def _epoch(value: str | None, end_of_day: bool = False) -> int | None:
@@ -69,7 +69,7 @@ def _plain(name: str) -> bool:
 
 
 def _sentences(text: str) -> list[str]:
-    return [s for s in re.split(r"(?<=[.!?])\s+|[;\n]+", text) if s.strip()]
+    return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text) if s.strip()]
 
 
 @dataclass
@@ -276,6 +276,8 @@ def summarize(rows: list[dict]) -> dict:
         return {"n": n,
                 "correct": _pct(sum(r["verdict"]["correct"] for r in group), n),
                 "correct_literal": _pct(sum(r["verdict"]["correct_literal"] for r in group), n),
+                "correct_sentence_only": _pct(sum(r["verdict"].get("correct_sentence_only", r["verdict"]["correct"])
+                                                  for r in group), n),
                 "stale": _pct(sum(r["verdict"]["stale"] for r in group), n),
                 "unsupported": _pct(sum(r["verdict"]["unsupported"] for r in group), n),
                 "clean": _pct(sum(r["verdict"]["clean"] for r in group), n),

@@ -37,10 +37,19 @@ def evidence_of(row: dict, by_id: dict[str, dict]) -> str:
     return "\n\n".join(render_record(by_id[r["id"]]) for r in row.get("retrieved", []) if r["id"] in by_id)
 
 
+def scored_text(row: dict) -> str:
+    """What the user reads. For honest-memory that is the sentence plus the source ids the tools returned with it (an
+    answer carries its sources); for plain retrieval it is the model's text, with whatever ids the model chose to cite."""
+    cited = row.get("cited")
+    return row["answer"] + (" Sources: " + ", ".join(cited) + "." if cited else "")
+
+
 def finish(q: dict, system: str, out: dict, truth: Truth, by_id: dict) -> dict:
     row = {"id": q["id"], "type": q["type"], "scenario": q.get("scenario"), "system": system, "question": q["question"],
            "as_of": q.get("as_of"), "gold": q["answer"], **out}
-    row["verdict"] = score(q, row["answer"], evidence_of(row, by_id), truth)
+    evidence = evidence_of(row, by_id)
+    row["verdict"] = score(q, scored_text(row), evidence, truth)
+    row["verdict"]["correct_sentence_only"] = score(q, row["answer"], evidence, truth)["correct"]
     if "retrieved" in row and q.get("source_ids"):
         got, gold = {r["id"] for r in row["retrieved"]}, set(q["source_ids"])
         row["gold_sources"] = sorted(gold)
@@ -111,8 +120,11 @@ def main(argv=None) -> int:
     ap.add_argument("--port", type=int, default=6393, help="FalkorDB port (6393: 4.22.0, 6390: 6.0.2 on this machine)")
     ap.add_argument("--model", default=DEFAULT_MODEL, help="chat model for plain RAG and for the agent")
     ap.add_argument("--embed-model", default=EMBED_MODEL)
+    ap.add_argument("--reasoning", default="none", help="reasoning_effort for every model call: none (thinking off), "
+                    "low, medium, high, or default (leave the model's own setting)")
     ap.add_argument("--k", type=int, default=K, help="episodes retrieved per question for plain RAG")
     ap.add_argument("--limit", type=int, help="only the first N questions (smoke test)")
+    ap.add_argument("--only", help="only these question ids, comma-separated (smoke test)")
     ap.add_argument("--out", default=str(RESULTS), help="results directory")
     ap.add_argument("--report", help="markdown table path (default: bench/RESULTS.md for bench/results, else <out>/RESULTS.md)")
     ap.add_argument("--resume", action="store_true", help="keep answers already saved in --out and only run the rest")
@@ -130,6 +142,9 @@ def main(argv=None) -> int:
 
     corpus: Corpus = load_corpus(args.seed, args.corpus)
     questions = corpus.questions[:args.limit] if args.limit else corpus.questions
+    if args.only:
+        wanted = set(args.only.split(","))
+        questions = [q for q in questions if q["id"] in wanted]
     truth = Truth(corpus.episodes, corpus.gold, corpus.now)
     by_id = {e["id"]: e for e in corpus.episodes}
     log(f"corpus {corpus.generator_version} seed {corpus.seed}: {len(corpus.episodes)} episodes, {len(questions)} questions")
@@ -158,19 +173,20 @@ def main(argv=None) -> int:
     started, t0 = now_utc(), time.perf_counter()
     ollama = Ollama()
     log("warming up the models")
-    ollama.chat(args.model, [{"role": "user", "content": "Reply with the word ok."}])
+    reasoning = None if args.reasoning == "default" else args.reasoning
+    ollama.chat(args.model, [{"role": "user", "content": "Reply with the word ok."}], reasoning)
     ollama.embed(args.embed_model, ["warm up"])
 
     results: dict[str, list[dict]] = {}
     ingest: dict = {}
     falkordb = "not used"
     if "plain-rag" in systems:
-        rag = PlainRag(corpus, ollama, args.model, args.embed_model, args.k)
+        rag = PlainRag(corpus, ollama, args.model, args.embed_model, args.k, reasoning)
         results["plain-rag"] = run_system("plain-rag", rag.ask, questions, paths["plain-rag"], truth, by_id, args.resume)
     if any(s.startswith("honest") for s in systems):
         from .honest import Honest
 
-        with Honest(corpus, args.host, args.port, args.model, keep=args.keep_tenant) as honest:
+        with Honest(corpus, args.host, args.port, args.model, keep=args.keep_tenant, reasoning=reasoning) as honest:
             ingest, falkordb = honest.ingest_summary, honest.version
             log(f"tenant {honest.tenant} on FalkorDB {falkordb}: {ingest['gate_calls']} gate decisions in {ingest['seconds']} s")
             if "honest-router" in systems:
@@ -183,7 +199,7 @@ def main(argv=None) -> int:
     models = ollama_models([args.model, args.embed_model])
     meta = {"started": started, "finished": now_utc(), "wall_seconds": round(time.perf_counter() - t0, 1),
             "seed": corpus.seed, "generator_version": corpus.generator_version, "corpus_sha256": corpus.sha256,
-            "questions": len(questions), "k": args.k, "commit": git_head(), "ollama_version": ollama_version(),
+            "questions": len(questions), "k": args.k, "reasoning": args.reasoning, "commit": git_head(), "ollama_version": ollama_version(),
             "models": {"chat": {"name": args.model, **models[args.model]},
                        "embedding": {"name": args.embed_model, **models[args.embed_model]}},
             "falkordb_version": falkordb, "falkordb_port": args.port, "systems": systems,

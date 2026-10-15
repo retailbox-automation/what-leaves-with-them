@@ -95,12 +95,18 @@ class Ollama:
         self.base_url = base_url
         self.client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=1)
 
-    def chat(self, model: str, messages: list[dict]) -> tuple[str, dict]:
-        """One completion at temperature 0 with a fixed seed: the text and the token counts. Thinking tokens, if the
-        model emits any, are counted but not returned."""
-        out = self.client.chat.completions.create(model=model, messages=messages, temperature=0, seed=42)
-        usage = {"prompt_tokens": out.usage.prompt_tokens, "completion_tokens": out.usage.completion_tokens} if out.usage else {}
-        return (out.choices[0].message.content or "").strip(), usage
+    def chat(self, model: str, messages: list[dict], reasoning: str | None = None, max_tokens: int = 1500) -> tuple[str, dict]:
+        """One completion at temperature 0 with a fixed seed: the text and the token counts. `reasoning` is Ollama's
+        reasoning_effort ("none" turns thinking off); thinking tokens are counted but not returned. A completion cut off
+        by max_tokens comes back empty, with finish_reason "length" in the usage."""
+        kwargs = {"reasoning_effort": reasoning} if reasoning else {}
+        out = self.client.chat.completions.create(model=model, messages=messages, temperature=0, seed=42,
+                                                  max_tokens=max_tokens, **kwargs)
+        choice = out.choices[0]
+        usage = {"finish_reason": choice.finish_reason}
+        if out.usage:
+            usage.update(prompt_tokens=out.usage.prompt_tokens, completion_tokens=out.usage.completion_tokens)
+        return (choice.message.content or "").strip(), usage
 
     def embed(self, model: str, texts: list[str], batch: int = 32) -> list[list[float]]:
         vectors: list[list[float]] = []

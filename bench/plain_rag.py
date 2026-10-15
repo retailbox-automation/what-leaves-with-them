@@ -32,8 +32,10 @@ def render_record(ep: dict) -> str:
 
 
 class PlainRag:
-    def __init__(self, corpus: Corpus, ollama: Ollama, chat_model: str, embed_model: str = EMBED_MODEL, k: int = K):
+    def __init__(self, corpus: Corpus, ollama: Ollama, chat_model: str, embed_model: str = EMBED_MODEL, k: int = K,
+                 reasoning: str | None = None):
         self.corpus, self.ollama, self.chat_model, self.embed_model, self.k = corpus, ollama, chat_model, embed_model, k
+        self.reasoning = reasoning
         self.query_prefix, doc_prefix = EMBED_PREFIXES.get(embed_model, ("", ""))
         self.cache = EmbeddingCache(ollama, embed_model)
         docs = [f"{doc_prefix}{e['title']}\n{e['text']}" if e.get("title") and e["channel"] != "chat"
@@ -54,6 +56,6 @@ class PlainRag:
             messages = [{"role": "system", "content": SYSTEM_PROMPT.format(today=self.corpus.now[:10])},
                         {"role": "user", "content": f"Records:\n\n{records}\n\nQuestion: {question}"}]
             with Stopwatch() as llm:
-                answer, usage = self.ollama.chat(self.chat_model, messages)
+                answer, usage = self.ollama.chat(self.chat_model, messages, self.reasoning)
         return {"answer": answer, "retrieved": [{"id": ep["id"], "score": s} for ep, s in hits], **usage,
                 "ms": total.ms, "ms_retrieve": embed.ms, "ms_llm": llm.ms}

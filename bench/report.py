@@ -16,7 +16,7 @@ def _cells(b: dict) -> str:
 
 
 def _overall(b: dict) -> str:
-    return f"{_cells(b)} | {b['correct_literal']:.1f} | {b['leaked']}"
+    return f"{_cells(b)} | {b['correct_literal']:.1f} | {b['correct_sentence_only']:.1f} | {b['leaked']}"
 
 
 HEAD = "| {} | n | correct % | stale % | unsupported % | clean % | median ms |\n|---|---|---|---|---|---|---|"
@@ -58,15 +58,15 @@ def render(summary: dict, results: dict[str, list[dict]]) -> str:
         f"seed {m['seed']}, corpus generator {m['generator_version']} (files sha256 `{m['corpus_sha256'][:12]}`).", "",
         f"- Run: {m['started']} to {m['finished']} UTC ({m['wall_seconds'] / 60:.1f} min), repo commit `{m['commit']}`.",
         f"- Chat model, for plain RAG and for the agent: `{chat['name']}` ({chat.get('parameters', '?')}, "
-        f"{chat.get('quantization', '?')}, digest `{chat.get('digest', '?')}`), temperature 0, via Ollama {m['ollama_version']}.",
+        f"{chat.get('quantization', '?')}, digest `{chat.get('digest', '?')}`), temperature 0, reasoning_effort `{m['reasoning']}`, via Ollama {m['ollama_version']}.",
         f"- Embeddings for plain RAG: `{embed['name']}` (digest `{embed.get('digest', '?')}`), top-k {m['k']}.",
         f"- FalkorDB {m['falkordb_version']} on port {m['falkordb_port']}; ingest: {m['ingest']['episodes']} episodes, "
         f"{m['ingest']['gate_calls']} gate decisions in {m['ingest']['seconds']} s "
         f"({', '.join(f'{k} {v}' for k, v in m['ingest']['outcomes'].items())}).", "",
         "How each column is decided is in `bench/score.py` (names and dates, no model as judge) and `bench/README.md`. "
         "**clean** = correct and not stale, unsupported or leaking personal data.", "",
-        "## All questions", "", HEAD.format("system") .replace("median ms |", "median ms | literal-rule correct % | personal data leaks |")
-        + "---|---|",
+        "## All questions", "", HEAD.format("system") .replace("median ms |", "median ms | literal-rule correct % | sentence-only correct % | personal data leaks |")
+        + "---|---|---|",
     ]
     for name in results:
         if name in summary["systems"]:
