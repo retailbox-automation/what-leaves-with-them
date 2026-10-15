@@ -282,7 +282,7 @@ Eight things we ran into, each with a reproduction (scripts in [spike/](spike/))
 
 ## How AI was used
 
-The code, tests and docs in this repository were written with AI coding assistants under the author's direction. The design decisions, the choice of concept and the acceptance of each change are the author's, and they are logged. The demo agent itself runs on a local open model, with no paid API.
+The code, tests and docs in this repository were written with AI coding assistants under the author's direction. The design decisions, the choice of concept and the acceptance of each change are the author's. The demo agent itself runs on a local open model, with no paid API.
 
 ## Repository
 
