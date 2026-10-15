@@ -41,12 +41,26 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .zone text { font: 700 clamp(13px, 1.05vw, 19px) var(--font); letter-spacing: 0.14em; text-transform: uppercase; }
 .zone.lit path { stroke-width: 2; }
 
-/* labels drawn over nodes */
-.nlabel { position: absolute; transform: translate(-50%, 0); white-space: nowrap; font-size: clamp(12px, 0.95vw, 17px);
-  color: var(--ink); text-shadow: 0 1px 3px #000, 0 0 8px var(--bg); transition: opacity 250ms; }
+/* the lit path: curves from step to step, drawn in as the depth grows (the final state is the resting style, so
+   reduced motion simply shows it) */
+#overlay .flow .glow { fill: none; stroke: var(--blue); stroke-width: 9; stroke-opacity: 0.16; stroke-linecap: round;
+  animation: flow-glow 420ms ease-out var(--delay, 0ms) backwards; }
+#overlay .flow .line { fill: none; stroke: var(--blue); stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 1;
+  stroke-dashoffset: 0; animation: flow-draw 420ms ease-out var(--delay, 0ms) backwards; }
+#overlay .flow .head { fill: var(--blue); animation: flow-head 160ms ease-out calc(var(--delay, 0ms) + 330ms) backwards; }
+#overlay .flow .hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: default; }
+@keyframes flow-draw { from { stroke-dashoffset: 1; } }
+@keyframes flow-glow { from { stroke-opacity: 0; } }
+@keyframes flow-head { from { opacity: 0; } }
+
+/* labels drawn under nodes: one size, one weight; the picked person a step larger */
+.nlabel { position: absolute; transform: translate(-50%, 0); white-space: nowrap; font-size: clamp(12px, 1.02vw, 20px);
+  font-weight: 500; line-height: 1.2; color: var(--ink); letter-spacing: 0.005em;
+  text-shadow: 0 1px 3px #000, 0 0 10px var(--bg), 0 0 4px var(--bg); transition: opacity 250ms; }
+.nlabel.pick { font-size: clamp(13px, 1.1vw, 21px); font-weight: 600; }
 .nlabel.red { color: #ff8a8d; }
 .nlabel.green { color: #6fe0a6; }
-.nlabel.dim { color: var(--muted); }
+.nlabel.hover { color: #c9d3e6; }
 
 /* header */
 .brand { position: absolute; top: clamp(14px, 2vh, 26px); left: clamp(14px, 1.6vw, 30px); display: flex; gap: 12px;
@@ -64,8 +78,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #counters { position: absolute; top: clamp(8px, 1.4vh, 20px); left: 50%; transform: translateX(-50%); display: flex;
   gap: clamp(24px, 4vw, 70px); z-index: 5; text-align: center; align-items: flex-start; }
 .counter { display: flex; flex-direction: column; align-items: center; cursor: default; }
-.counter b { font-size: clamp(34px, 3.6vw, 64px); line-height: 1; font-weight: 800; color: var(--red); }
-.counter span { margin-top: 6px; font-size: clamp(12px, 0.95vw, 17px); color: var(--red); white-space: nowrap; }
+.counter b { font-size: clamp(38px, 4.3vw, 82px); line-height: 0.95; font-weight: 800; color: var(--red);
+  letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.counter span { margin-top: 6px; font-size: clamp(12px, 0.98vw, 18px); font-weight: 500; color: var(--red); white-space: nowrap; }
 .counter.zero b, .counter.zero span { color: var(--muted); }
 .counter.good b { color: var(--green); }
 .counter.good span { color: var(--muted); }
