@@ -152,7 +152,7 @@ def git_head() -> str:
     try:
         out = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
                              timeout=10)
-        dirty = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain", "--", "honest_memory", "bench"],
+        dirty = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain", "--untracked-files=no", "--", "honest_memory", "bench"],
                                capture_output=True, text=True, timeout=10).stdout.strip()
         return out.stdout.strip() + (" (uncommitted changes)" if dirty else "")
     except (OSError, subprocess.SubprocessError):
