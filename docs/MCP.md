@@ -23,7 +23,7 @@ Project file `.mcp.json` (or `claude mcp add honest-memory -e HM_TENANT=demo -- 
       "args": ["-m", "honest_memory.mcp_server"],
       "env": {
         "HM_TENANT": "demo",
-        "HM_AGENT": "agent:claude-code",
+        "HM_AGENT": "agent:editor",
         "FALKORDB_HOST": "localhost",
         "FALKORDB_PORT": "6379"
       }

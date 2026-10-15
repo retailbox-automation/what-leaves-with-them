@@ -70,13 +70,13 @@ def test_writes_are_stamped_with_the_server_identity_and_can_be_switched_off(fx_
     from honest_memory.mcp_server import Memory
 
     server = build_server(fx_store.tenant, db=fx_store.db)
-    server.memory.ctx.agent, server.memory.ctx.session = "agent:claude-code", "mcp-test"
+    server.memory.ctx.agent, server.memory.ctx.session = "agent:editor", "mcp-test"
     res = with_client(server, lambda c: c.call_tool("remember", {
         "text": "Asked in the editor who owns billing-api; per ADR-0009 it is Luca Ostrander.",
         "about": ["billing-api"], "source_ids": ["ADR-0009"]}))
     assert payload(res)["outcome"] == "accepted"
     row = fx_store.ro("MATCH (a:Agent)-[:WROTE]->(f:Finding {session: 'mcp-test'}) RETURN a.name")
-    assert row == [["agent:claude-code"]]
+    assert row == [["agent:editor"]]
     readonly = build_server(fx_store.tenant, db=fx_store.db, readonly=True)
     names = [t.name for t in with_client(readonly, lambda c: c.list_tools()).tools]
     assert "remember" not in names and "handoff" not in names and len(names) == 12

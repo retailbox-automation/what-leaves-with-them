@@ -1,4 +1,4 @@
-"""MCP stdio server: the tool catalogue for Claude Code, Cursor or any MCP client.
+"""MCP stdio server: the tool catalogue for any MCP client (editors, agents).
 
 Every tool of honest_memory.tools is exposed with the JSON schema from tool_schemas(), so the client sees
 exactly what the HTTP API and the OpenAI-format tools see. The model picks a tool and fills arguments; it

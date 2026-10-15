@@ -18,7 +18,7 @@ from __future__ import annotations
 import difflib
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -28,7 +28,6 @@ from .schema import ENTITY_KEYS, FORBIDDEN_PREDICATES, PREDICATES, RECORD_KEYS
 from .store import Store, epoch
 
 KEYS = {**ENTITY_KEYS, **RECORD_KEYS}
-ENTITY_LABELS = tuple(ENTITY_KEYS)
 ANY_ENTITY = ("System", "Person", "Team", "Decision", "Project", "Agent")
 PREDICATE_NAMES = tuple(PREDICATES)
 MAX_DEPTH = 4
