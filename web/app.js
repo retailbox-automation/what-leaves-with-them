@@ -18,10 +18,11 @@
   const ms = (t) => (REDUCED ? 0 : t);
   const DAYS_PER_ANSWER = 3;        // what one answer costs on the countdown (a game rule, not data)
   const ASSUMED_NOTICE_DAYS = 14;   // when the graph records no last day for the person
-  const W = 1600, H = 900;          // layout space
   const STEP_MS = 170;              // one hop of the depth animation
+  const MOVE_MS = 560;              // a lit node gliding into its step, or back home
   const ZONE_ORDER = ['Payments', 'Platform', 'Support', 'Growth'];
   const HIDDEN_EDGES = new Set(['MEMBER_OF']);  // membership is the zone itself
+  const QUIET = new Set(['decision', 'project']);  // drawn only while they are part of a lit path or a result
 
   const $ = (id) => document.getElementById(id);
   const app = $('app');
@@ -42,15 +43,6 @@
   const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
   const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const sleep = (t) => new Promise((r) => setTimeout(r, t));
-
-  function mulberry32(seed) {
-    return () => {
-      seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
-      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
 
   function mix(hexA, hexB, t) {
     const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
@@ -165,32 +157,36 @@
     && model.nodes.has(e.source) && model.nodes.has(e.target);
   const edgeId = (e) => `${e.type}|${e.source}|${e.target}`;
 
-  // Each team gets a region of the layout space: four quadrants with a cross-shaped gap between them. Rows and
-  // columns are sized by how many nodes the teams in them hold.
+  // ---- layout: every team owns a corner, its nodes on a tidy grid ----------------------------------------------------
+  // Payments top-left, Platform top-right, Support bottom-left, Growth bottom-right (the zone order). Inside a zone three
+  // lanes: people, then decisions and projects (drawn only when lit), then systems, each ordered so an owner sits above
+  // what they own. A decision that governs a system of another team sits in the gap between the two zones. The margins
+  // outside the zones stay free for the systems that drift off when a person is removed. A narrow portrait screen gets
+  // the same corners with the lanes running down instead of across. Nothing here is random: every load is the same.
+  let W = 2000, H = 860, PORTRAIT = false;
   const regions = new Map();
+  const extent = { x0: 0, y0: 0, x1: W, y1: H };
 
   function planRegions() {
-    const count = new Map(model.teams.map((t) => [t, 0]));
-    for (const n of model.nodes.values()) if (drawnNode(n) && placeOf(n).team) count.set(placeOf(n).team, (count.get(placeOf(n).team) || 0) + 1);
-    const c = (i) => count.get(model.teams[i]) || 0;
-    const L = 20, R = W - 20, T = 92, B = H - 40, GX = 150, GY = 96;
-    const top = Math.max(c(0), c(1)), bottom = Math.max(c(2), c(3));
-    const share = Math.max(0.42, Math.min(0.6, top / Math.max(1, top + bottom)));
-    const split = T + (B - T - GY) * share;
-    const left = Math.max(c(0), c(2)), right = Math.max(c(1), c(3));
-    const colShare = Math.max(0.44, Math.min(0.56, left / Math.max(1, left + right)));
-    const mid = L + (R - L - GX) * colShare;
+    PORTRAIT = innerWidth <= 760 && innerHeight > innerWidth;
+    [W, H] = PORTRAIT ? [1000, 1640] : [2000, 830];
+    const MX = PORTRAIT ? 24 : 150, MY = PORTRAIT ? 10 : 4;
+    const GX = PORTRAIT ? 90 : 170, GY = PORTRAIT ? 250 : 96;
+    const L = MX, R = W - MX, T = MY, B = H - MY;
+    const mid = (L + R) / 2, split = (T + B) / 2;
     const rects = [
-      [L, T, mid, split], [mid + GX, T, R, split],
-      [L, split + GY, mid, B], [mid + GX, split + GY, R, B],
+      [L, T, mid - GX / 2, split - GY / 2], [mid + GX / 2, T, R, split - GY / 2],
+      [L, split + GY / 2, mid - GX / 2, B], [mid + GX / 2, split + GY / 2, R, B],
     ];
     model.teams.forEach((t, i) => {
-      if (i < 4) { const [x0, y0, x1, y1] = rects[i]; regions.set(t, { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }); }
+      if (i >= 4) return;
+      const [x0, y0, x1, y1] = rects[i];
+      regions.set(t, { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, col: i % 2, row: i >> 1 });
     });
-    regions.set('', { x0: mid, y0: split, x1: mid + GX, y1: split + GY, cx: mid + GX / 2, cy: split + GY / 2, gapX: [mid, mid + GX], gapY: [split, split + GY] });
+    regions.set('', { cx: mid, cy: split, mx: MX, my: MY, gy: GY });
   }
 
-  // Where a node is drawn: in its team's zone, or between two zones when it is a decision that governs a system of
+  // Where a node belongs: in its team's zone, or between two zones when it is a decision that governs a system of
   // another team (that is the decision a person leaving takes across a team line).
   const places = new Map();
 
@@ -202,89 +198,106 @@
         .map((e) => model.nodes.get(e.target)?.team).find((t) => t && t !== n.team);
       if (other) place = { team: null, between: [n.team, other] };
     }
-    if (place.team && !model.zoneOf.has(place.team)) place.team = null;
+    if (place.team && !regions.has(place.team)) place = { team: null, between: null };
     places.set(n.id, place);
     return place;
   }
 
   function zoneCenter(team) {
-    const r = regions.get(team);
-    return r ? [r.cx, r.cy] : [regions.get('').cx, regions.get('').cy];
+    const r = regions.get(team) || regions.get('');
+    return [r.cx, r.cy];
   }
 
-  function homeOf(n) {
-    const place = placeOf(n);
-    if (place.team) return zoneCenter(place.team);
-    const gap = regions.get('');
-    if (place.between) {
-      const [a, b] = place.between.map(zoneCenter);
-      const x = (a[0] + b[0]) / 2, y = (a[1] + b[1]) / 2;
-      return [x, y];
-    }
-    return [gap.cx, gap.cy];
+  // a lane of n nodes centred on `mid` along the main axis, at most `step` apart and inside [lo, hi]
+  function spread(n, lo, hi, step) {
+    const s = n > 1 ? Math.min(step, (hi - lo) / (n - 1)) : 0;
+    const first = (lo + hi) / 2 - (s * (n - 1)) / 2;
+    return Array.from({ length: n }, (_, i) => first + i * s);
   }
 
-  function boundsOf(p) {
-    const place = placeOf(p.n);
-    const r = regions.get(place.team);
-    if (r) return [r.x0 + 46, r.y0 + 84, r.x1 - 46, r.y1 - 30];
-    const g = regions.get('');
-    const [hx, hy] = p.home;
-    const inGapX = Math.abs(hx - (g.gapX[0] + g.gapX[1]) / 2) < 2, inGapY = Math.abs(hy - (g.gapY[0] + g.gapY[1]) / 2) < 2;
-    if (inGapX && !inGapY) return [g.gapX[0] + 30, 120, g.gapX[1] - 30, H - 60];
-    if (inGapY && !inGapX) return [60, g.gapY[0] + 22, W - 60, g.gapY[1] - 22];
-    return [g.gapX[0] - 10, g.gapY[0] - 10, g.gapX[1] + 10, g.gapY[1] + 10];
-  }
-
-  // A small deterministic force layout: every load gives the same picture, which then stays still.
   function layout() {
     planRegions();
-    const rnd = mulberry32(42);
-    const pts = [...model.nodes.values()].filter(drawnNode).map((n) => {
-      const home = homeOf(n);
-      const p = { id: n.id, n, x: home[0] + (rnd() - 0.5) * 200, y: home[1] + (rnd() - 0.5) * 120, vx: 0, vy: 0,
-        r: n.kind === 'project' ? 16 : 24, home, team: placeOf(n).team };
-      p.bounds = boundsOf(p);
-      return p;
-    });
-    const index = new Map(pts.map((p, i) => [p.id, i]));
-    const links = model.edges.filter(drawnEdge).map((e) => [index.get(e.source), index.get(e.target)])
-      .filter(([a, b]) => a !== undefined && b !== undefined);
-    const N = 600;
-    for (let it = 0; it < N; it++) {
-      const alpha = 1 - it / N;
-      for (let i = 0; i < pts.length; i++) {
-        for (let j = i + 1; j < pts.length; j++) {
-          const a = pts[i], b = pts[j];
-          let dx = a.x - b.x, dy = a.y - b.y;
-          let d2 = dx * dx + dy * dy;
-          if (d2 < 1) { dx = rnd() - 0.5; dy = rnd() - 0.5; d2 = 1; }
-          if (d2 > 240 * 240) continue;
-          const d = Math.sqrt(d2);
-          let f = (a.team === b.team ? 1100 : 400) / d2;
-          const min = a.r + b.r + 34;
-          if (d < min) f += (min - d) * 0.45 / d;
-          a.vx += dx * f * 0.5; a.vy += dy * f * 0.5; b.vx -= dx * f * 0.5; b.vy -= dy * f * 0.5;
-        }
-      }
-      for (const [i, j] of links) {
-        const a = pts[i], b = pts[j];
-        const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
-        const same = a.team && a.team === b.team;
-        const k = (same ? 0.01 : 0.002) * (d - (same ? 96 : 200)) / d;
-        a.vx += dx * k; a.vy += dy * k; b.vx -= dx * k; b.vy -= dy * k;
-      }
-      for (const p of pts) {
-        const g = p.team ? 0.03 : 0.03;
-        p.vx += (p.home[0] - p.x) * g; p.vy += (p.home[1] - p.y) * g;
-        const step = 12 * (0.25 + alpha);
-        p.vx = Math.max(-step, Math.min(step, p.vx)); p.vy = Math.max(-step, Math.min(step, p.vy));
-        p.x += p.vx; p.y += p.vy; p.vx *= 0.5; p.vy *= 0.5;
-        const [x0, y0, x1, y1] = p.bounds;
-        p.x = Math.max(x0, Math.min(x1, p.x)); p.y = Math.max(y0, Math.min(y1, p.y));
-      }
+    const nodes = [...model.nodes.values()].filter(drawnNode);
+    const firstOf = (type) => {
+      const m = new Map();
+      for (const e of model.edges) if (e.type === type && !m.has(e.target)) m.set(e.target, e.source);
+      return m;
+    };
+    const owner = firstOf('OWNS'), decider = firstOf('DECIDED'), lead = firstOf('LEADS');
+    const LABEL = PORTRAIT ? 70 : 62, IN = PORTRAIT ? 70 : 92;
+    for (const team of model.teams) {
+      const r = regions.get(team);
+      if (!r) continue;
+      const mine = nodes.filter((n) => placeOf(n).team === team);
+      const people = mine.filter((n) => n.kind === 'person').sort((a, b) => a.id.localeCompare(b.id));
+      const rank = new Map(people.map((p, i) => [p.id, i]));
+      const by = (m) => (a, b) => (rank.get(m.get(a.id)) ?? 99) - (rank.get(m.get(b.id)) ?? 99) || a.id.localeCompare(b.id);
+      const systems = mine.filter((n) => n.kind === 'system').sort(by(owner));
+      const middle = [...mine.filter((n) => n.kind === 'decision').sort(by(decider)),
+        ...mine.filter((n) => n.kind === 'project').sort(by(lead))];
+      const lanes = [people, middle, systems];
+      lanes.forEach((lane, k) => {
+        // across: the lane's position in the zone; along: the nodes spread over the zone, a light zigzag for rhythm
+        const across = PORTRAIT ? r.x0 + ((k + 0.5) * (r.x1 - r.x0)) / 3 : r.y0 + LABEL + ((k + 0.5) * (r.y1 - r.y0 - LABEL - 34)) / 3;
+        const [lo, hi] = PORTRAIT ? [r.y0 + LABEL + IN, r.y1 - IN] : [r.x0 + IN, r.x1 - IN];
+        const step = k === 1 ? 150 : PORTRAIT ? 150 : 190;
+        const along = spread(lane.length, lo, hi, step);
+        const zig = k === 1 && lane.length > 4 ? 26 : 9;
+        lane.forEach((n, i) => {
+          const a = along[i], b = across + (i % 2 ? zig : -zig);
+          model.home.set(n.id, PORTRAIT ? { x: Math.round(b), y: Math.round(a) } : { x: Math.round(a), y: Math.round(b) });
+        });
+      });
+      r.label = PORTRAIT ? { x: r.x0 + 34, y: r.y0 + 40, anchor: 'start' } : { x: r.x0 + (r.x1 - r.x0) * 0.2, y: r.y0 + 36, anchor: 'middle' };
     }
-    for (const p of pts) model.home.set(p.id, { x: Math.round(p.x), y: Math.round(p.y) });
+    // decisions between two zones: in the gap that separates them, side by side
+    const gap = regions.get('');
+    const groups = new Map();
+    for (const n of nodes.filter((m) => !placeOf(m).team)) {
+      const pair = placeOf(n).between;
+      const key = pair ? [...pair].sort().join('|') : '';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(n);
+    }
+    for (const [key, list] of groups) {
+      const [a, b] = key ? key.split('|').map((t) => regions.get(t)) : [];
+      list.sort((p, q) => p.id.localeCompare(q.id));
+      let cx = gap.cx, cy = gap.cy, dx = 160, dy = 0;
+      if (a && b && a.row === b.row) {          // side by side: the vertical gap, at the height of their middle lanes
+        cy = PORTRAIT ? (a.y0 + a.y1) / 2 : a.y0 + LABEL + (a.y1 - a.y0 - LABEL - 34) / 2;
+        dx = 0; dy = PORTRAIT ? 150 : 96;
+      } else if (a && b && a.col === b.col) {   // one above the other: the horizontal gap, under their middle
+        cx = (a.x0 + a.x1) / 2;
+        cy -= PORTRAIT ? 0 : 14;
+        dx = PORTRAIT ? 130 : 180;
+      }
+      list.forEach((n, i) => {
+        const o = i - (list.length - 1) / 2;
+        model.home.set(n.id, { x: Math.round(cx + o * dx), y: Math.round(cy + o * dy) });
+      });
+    }
+    // zones: a soft blob the size of the region (a superellipse with a slight wobble), fixed for the whole visit
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    model.teams.forEach((team, i) => {
+      const r = regions.get(team);
+      if (!r) return;
+      r.ring = blob(r, i);
+      r.hull = 'M' + r.ring.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' L') + 'Z';
+      for (const [x, y] of r.ring) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    });
+    Object.assign(extent, { x0: Math.min(0, x0), y0: Math.min(0, y0 - 6), x1: Math.max(W, x1), y1: Math.max(H, y1) });
+  }
+
+  function blob(r, seed) {
+    const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2, a = (r.x1 - r.x0) / 2, b = (r.y1 - r.y0) / 2;
+    const p = 2 / 3.4;  // the superellipse exponent: between an ellipse and a rounded rectangle
+    const pts = [];
+    for (let k = 0; k < 96; k++) {
+      const t = (k / 96) * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
+      const w = 1 + 0.022 * Math.sin(3 * t + seed * 1.7) + 0.014 * Math.sin(5 * t + seed * 2.9);
+      pts.push([cx + a * w * Math.sign(c) * Math.abs(c) ** p, cy + b * w * Math.sign(s) * Math.abs(s) ** p]);
+    }
+    return pts;
   }
 
   // ---- cytoscape ----------------------------------------------------------------------------------------------------
@@ -294,58 +307,65 @@
     const zi = model.zoneOf.get(n.team);
     const zone = zi === undefined ? '#6b7591' : C.zones[zi % C.zones.length];
     return { id: n.id, kind: n.kind, initials: n.kind === 'person' ? initials(n.id) : '', zone,
-      fill: zi === undefined ? C.node : mix(C.node, zone, 0.1), dim: n.kind === 'decision' && n.status === 'superseded' ? 1 : 0 };
+      fill: zi === undefined ? C.node : mix(C.node, zone, 0.12), dim: n.kind === 'decision' && n.status === 'superseded' ? 1 : 0 };
+  }
+
+  // the few edges drawn at rest: who owns what, and what a system needs inside its own team
+  function baseEdge(e) {
+    if (e.ended) return false;
+    if (e.type === 'OWNS') return true;
+    return e.type === 'DEPENDS_ON' && model.nodes.get(e.source)?.team === model.nodes.get(e.target)?.team;
   }
 
   function styles() {
-    const T = 'background-color, border-color, border-width, border-opacity, opacity, underlay-opacity, underlay-padding, line-color, width, color';
+    const T = 'background-color, border-color, border-width, border-opacity, opacity, underlay-opacity, underlay-padding, line-color, width, height, color';
+    const shown = { opacity: 1, events: 'yes' };
     return [
       { selector: 'node', style: {
-        'background-color': 'data(fill)', 'border-width': 1.5, 'border-color': 'data(zone)', 'border-opacity': 0.5,
-        label: 'data(initials)', color: C.nodeInk, 'font-size': 13, 'font-weight': 600, 'text-valign': 'center',
+        'background-color': 'data(fill)', 'border-width': 1.6, 'border-color': 'data(zone)', 'border-opacity': 0.5,
+        label: 'data(initials)', color: C.nodeInk, 'font-size': 15, 'font-weight': 600, 'text-valign': 'center',
         'text-halign': 'center', 'font-family': token('--font'), 'underlay-color': C.blue, 'underlay-opacity': 0,
-        'underlay-padding': 9, 'transition-property': T, 'transition-duration': ms(280), 'transition-timing-function': 'ease-out',
+        'underlay-padding': 10, 'transition-property': T, 'transition-duration': ms(300), 'transition-timing-function': 'ease-out',
       } },
-      { selector: 'node[kind = "person"]', style: { shape: 'ellipse', width: 44, height: 44, 'underlay-shape': 'ellipse' } },
-      { selector: 'node[kind = "system"]', style: { shape: 'round-rectangle', width: 38, height: 38, 'underlay-shape': 'round-rectangle' } },
-      { selector: 'node[kind = "decision"]', style: { shape: 'round-diamond', width: 40, height: 40, 'underlay-shape': 'ellipse' } },
-      { selector: 'node[kind = "project"]', style: { shape: 'round-hexagon', width: 26, height: 26, 'underlay-shape': 'ellipse' } },
+      { selector: 'node[kind = "person"]', style: { shape: 'ellipse', width: 56, height: 56, 'underlay-shape': 'ellipse' } },
+      { selector: 'node[kind = "system"]', style: { shape: 'round-rectangle', width: 50, height: 50, 'underlay-shape': 'round-rectangle' } },
+      { selector: 'node[kind = "decision"]', style: { shape: 'round-diamond', width: 56, height: 56, 'underlay-shape': 'ellipse' } },
+      { selector: 'node[kind = "project"]', style: { shape: 'round-hexagon', width: 32, height: 32, 'underlay-shape': 'ellipse' } },
       { selector: 'node[dim = 1]', style: { 'border-style': 'dashed' } },
-      { selector: 'node.faded', style: { opacity: 0.45 } },
-      { selector: 'node.lit', style: { 'border-color': C.blue, 'border-opacity': 1, 'border-width': 2.5, 'background-color': '#0e2846',
-        'underlay-color': C.blue, 'underlay-opacity': 0.16, color: '#d6e9f8', opacity: 1 } },
-      { selector: 'node.tail', style: { 'border-color': C.blue, 'border-opacity': 0.75, 'border-width': 2, opacity: 1 } },
-      { selector: 'node.pick', style: { 'border-color': '#6cb8ec', 'border-width': 3, 'background-color': '#0f2c4f',
-        'underlay-color': C.blue, 'underlay-opacity': 0.3, 'underlay-padding': 14, color: '#ffffff', opacity: 1 } },
-      { selector: 'node.ghost', style: { 'background-opacity': 0, 'border-style': 'dashed', 'border-color': '#8a94ae',
-        'border-opacity': 0.9, 'border-width': 2, label: '', 'underlay-opacity': 0, opacity: 1 } },
-      { selector: 'node.island', style: { 'border-color': C.red, 'border-opacity': 1, 'border-width': 2.5, 'background-color': '#3a1219',
-        'underlay-color': C.red, 'underlay-opacity': 0.26, 'underlay-padding': 13, color: '#ffd1d2', opacity: 1 } },
-      { selector: 'node.single', style: { 'border-color': C.red, 'border-opacity': 1, 'border-width': 2.5, 'background-color': '#2e1218',
-        'underlay-color': C.red, 'underlay-opacity': 0.16, opacity: 1 } },
-      { selector: 'node.saved', style: { 'border-color': C.green, 'border-opacity': 1, 'border-width': 2.5, 'background-color': '#0f3326',
-        'underlay-color': C.green, 'underlay-opacity': 0.24, 'underlay-padding': 12, color: '#d9f7e8', opacity: 1 } },
-      { selector: 'node.succ', style: { 'border-color': C.green, 'border-opacity': 1, 'border-width': 2.5,
-        'underlay-color': C.green, 'underlay-opacity': 0.2, color: '#d9f7e8', opacity: 1 } },
+      { selector: 'node.soft', style: { opacity: 0.72 } },
+      { selector: 'node.faded', style: { opacity: 0.2 } },
+      { selector: 'node.under', style: { opacity: 0.03, events: 'no' } },
+      { selector: 'node.quiet', style: { opacity: 0, events: 'no' } },
+      { selector: 'node.tail', style: { ...shown, opacity: 0.6, 'border-color': C.blue, 'border-opacity': 0.8, 'border-width': 2 } },
+      { selector: 'node.lit', style: { ...shown, 'border-color': '#5aaee6', 'border-opacity': 1, 'border-width': 2.8, 'background-color': '#103558',
+        'underlay-color': C.blue, 'underlay-opacity': 0.26, 'underlay-padding': 12, color: '#d6e9f8' } },
+      { selector: 'node.pick', style: { ...shown, width: 64, height: 64, 'border-color': '#7cc4f2', 'border-width': 3, 'background-color': '#0f2c4f',
+        'underlay-color': C.blue, 'underlay-opacity': 0.34, 'underlay-padding': 15, color: '#ffffff', 'font-size': 17 } },
+      { selector: 'node.ghost', style: { ...shown, 'background-opacity': 0, 'border-style': 'dashed', 'border-color': '#9aa4bd',
+        'border-opacity': 0.9, 'border-width': 2, label: '', 'underlay-opacity': 0 } },
+      { selector: 'node.island', style: { ...shown, 'border-color': C.red, 'border-opacity': 1, 'border-width': 2.6, 'background-color': '#3a1219',
+        'underlay-color': C.red, 'underlay-opacity': 0.3, 'underlay-padding': 14, color: '#ffd1d2' } },
+      { selector: 'node.single', style: { ...shown, 'border-color': C.red, 'border-opacity': 1, 'border-width': 2.6, 'background-color': '#2e1218',
+        'underlay-color': C.red, 'underlay-opacity': 0.2 } },
+      { selector: 'node.saved', style: { ...shown, 'border-color': C.green, 'border-opacity': 1, 'border-width': 2.6, 'background-color': '#0f3326',
+        'underlay-color': C.green, 'underlay-opacity': 0.28, 'underlay-padding': 13, color: '#d9f7e8' } },
+      { selector: 'node.succ', style: { ...shown, 'border-color': C.green, 'border-opacity': 1, 'border-width': 2.6,
+        'underlay-color': C.green, 'underlay-opacity': 0.22, color: '#d9f7e8' } },
       { selector: 'edge', style: {
-        width: 1, 'line-color': '#8f9cc0', opacity: 0.22, 'curve-style': 'straight', 'arrow-scale': 0.9,
+        width: 1.2, 'line-color': '#8f9cc0', opacity: 0, events: 'no', 'curve-style': 'straight', 'arrow-scale': 0.9,
         'target-arrow-color': C.blue, 'source-arrow-color': C.blue,
-        'transition-property': T + ', source-distance-from-node, target-distance-from-node', 'transition-duration': ms(280),
+        'transition-property': T + ', source-distance-from-node, target-distance-from-node', 'transition-duration': ms(300),
       } },
-      { selector: 'edge.faded', style: { opacity: 0.12 } },
-      { selector: 'edge.lit', style: { 'line-color': C.blue, width: 2.4, opacity: 1, 'z-index': 10, 'underlay-color': C.blue,
-        'underlay-opacity': 0.18, 'underlay-padding': 4 } },
-      { selector: 'edge.lit.fwd', style: { 'target-arrow-shape': 'triangle' } },
-      { selector: 'edge.lit.back', style: { 'source-arrow-shape': 'triangle' } },
-      { selector: 'edge.tail', style: { 'line-color': C.blue, width: 1.5, opacity: 0.5, 'z-index': 9 } },
-      { selector: 'edge.snap', style: { 'line-color': C.red, 'line-style': 'dashed', 'line-dash-pattern': [7, 6], width: 2,
-        opacity: 0.9, 'z-index': 10 } },
-      { selector: 'edge.snap.weak', style: { width: 1.4, opacity: 0.5 } },
-      { selector: 'edge.snap.after', style: { opacity: 0.22 } },
-      { selector: 'edge.snap-s', style: { 'source-distance-from-node': 16 } },
-      { selector: 'edge.snap-t', style: { 'target-distance-from-node': 16 } },
-      { selector: 'edge.handover', style: { 'line-color': C.green, 'line-style': 'dashed', 'line-dash-pattern': [7, 6], width: 2,
-        opacity: 0.95, 'z-index': 11 } },
+      { selector: 'edge[base = 1]', style: { opacity: 0.17, events: 'yes' } },
+      { selector: 'edge[base = 1].soft', style: { opacity: 0.13 } },
+      { selector: 'edge[base = 1].faded', style: { opacity: 0.035, events: 'no' } },
+      { selector: 'edge.snap', style: { 'line-color': C.red, 'line-style': 'dashed', 'line-dash-pattern': [8, 6], width: 2.2,
+        opacity: 0.9, events: 'yes', 'z-index': 10 } },
+      { selector: 'edge.snap.after', style: { opacity: 0.25 } },
+      { selector: 'edge.snap-s', style: { 'source-distance-from-node': 18 } },
+      { selector: 'edge.snap-t', style: { 'target-distance-from-node': 18 } },
+      { selector: 'edge.handover', style: { 'line-color': C.green, 'line-style': 'dashed', 'line-dash-pattern': [8, 6], width: 2.2,
+        opacity: 0.95, events: 'yes', 'z-index': 11 } },
     ];
   }
 
@@ -353,10 +373,10 @@
     const elements = [];
     for (const n of model.nodes.values()) {
       if (!drawnNode(n)) continue;
-      elements.push({ group: 'nodes', data: nodeData(n), position: { ...model.home.get(n.id) } });
+      elements.push({ group: 'nodes', data: nodeData(n), position: { ...model.home.get(n.id) }, classes: QUIET.has(n.kind) ? 'quiet' : '' });
     }
     for (const e of model.edges.filter(drawnEdge)) {
-      elements.push({ group: 'edges', data: { id: edgeId(e), source: e.source, target: e.target, type: e.type } });
+      elements.push({ group: 'edges', data: { id: edgeId(e), source: e.source, target: e.target, type: e.type, base: baseEdge(e) ? 1 : 0 } });
     }
     cy = cytoscape({
       container: $('cy'), elements, layout: { name: 'preset' }, style: styles(),
@@ -366,42 +386,49 @@
     cy.on('render', scheduleSync);
     cy.on('tap', 'node', (ev) => onTapNode(ev.target));
     cy.on('tap', (ev) => { if (ev.target === cy) onTapBackground(); });
-    cy.on('mouseover', 'node, edge', (ev) => showTip(ev.target, ev.originalEvent));
+    cy.on('mouseover', 'node, edge', (ev) => { showTip(ev.target, ev.originalEvent); hoverName(ev.target, true); });
     cy.on('mousemove', 'node, edge', (ev) => moveTip(ev.originalEvent));
-    cy.on('mouseout', 'node, edge', hideTip);
+    cy.on('mouseout', 'node, edge', (ev) => { hideTip(); hoverName(ev.target, false); });
+  }
+
+  // a person's full name under the circle while the pointer is on it
+  let hovered = null;
+  function hoverName(ele, on) {
+    if (!ele.isNode() || model.nodes.get(ele.id())?.kind !== 'person') return;
+    hovered = on ? ele.id() : hovered === ele.id() ? null : hovered;
+    scheduleSync();
   }
 
   // ---- fitting the drawing into the free part of the screen ---------------------------------------------------------
   function freeRect() {
     const w = innerWidth, h = innerHeight;
     const narrow = w <= 760;
-    const top = narrow ? 110 : Math.max(96, h * 0.115);
+    const top = narrow ? (['removing', 'removed', 'done'].includes(state.phase) ? 178 : 110) : Math.max(96, h * 0.115);
     let bottom = narrow ? h - 120 : h - Math.max(120, h * 0.16);
     let right = w - 16;
     if (state.phase === 'game') {
       if (narrow) bottom = h * 0.48 - 8; else right = w - $('game').getBoundingClientRect().width - 24;
     }
-    if (state.phase === 'done' && !narrow) {
-      bottom = h - Math.max(70, h * 0.07);
-      if (w >= 1100) right = w - $('handoff').getBoundingClientRect().width - 40;
-    }
     return { x: 16, y: top, w: Math.max(100, right - 16), h: Math.max(100, bottom - top) };
   }
 
   function fit(animate, focus) {
-    // the whole drawing, or (in the game) the part around the people and items in play, never zoomed in past 1.6x
-    let pts = [...model.home.values()];
-    let margin = 70;
+    // the whole drawing (zones and the free margins), or (in the game) the part round the points in play
+    let b = { ...extent };
+    let full = null;
     if (focus && focus.length) {
-      pts = focus.flatMap((id) => [model.home.get(id), cy.getElementById(id).length ? cy.getElementById(id).position() : null]).filter(Boolean);
-      margin = 110;
+      const pts = focus;
+      const m = 130;
+      b = { x0: Math.min(...pts.map((p) => p.x)) - m, x1: Math.max(...pts.map((p) => p.x)) + m,
+        y0: Math.min(...pts.map((p) => p.y)) - m, y1: Math.max(...pts.map((p) => p.y)) + m - 10 };
+      full = extent;
     }
-    const minX = Math.min(...pts.map((p) => p.x)) - margin, maxX = Math.max(...pts.map((p) => p.x)) + margin;
-    const minY = Math.min(...pts.map((p) => p.y)) - margin, maxY = Math.max(...pts.map((p) => p.y)) + margin - 10;
+    hovered = null;  // the camera moves the nodes away from a resting pointer: no name or tooltip left behind
+    hideTip();
     const r = freeRect();
-    const full = Math.min(r.w / W, r.h / H);
-    const zoom = Math.min(r.w / (maxX - minX), r.h / (maxY - minY), full * 1.6);
-    const pan = { x: r.x + r.w / 2 - zoom * (minX + maxX) / 2, y: r.y + r.h / 2 - zoom * (minY + maxY) / 2 };
+    const whole = full ? Math.min(r.w / (full.x1 - full.x0), r.h / (full.y1 - full.y0)) : Infinity;
+    const zoom = Math.min(r.w / (b.x1 - b.x0), r.h / (b.y1 - b.y0), whole * 1.6);
+    const pan = { x: r.x + r.w / 2 - zoom * (b.x0 + b.x1) / 2, y: r.y + r.h / 2 - zoom * (b.y0 + b.y1) / 2 };
     if (animate && !REDUCED) cy.animate({ zoom, pan }, { duration: 500, easing: 'ease-in-out-cubic' });
     else cy.viewport({ zoom, pan });
   }
@@ -424,7 +451,8 @@
     return lower.slice(0, -1).concat(upper.slice(0, -1));
   }
 
-  function softHull(points, r) {
+  function softHull(points, r, round = 0.2) {
+    // the hull of the points grown by r, corners smoothed and pulled a little towards an ellipse: a soft blob
     const ring = [];
     for (const q of points) for (let k = 0; k < 20; k++) ring.push([q[0] + Math.cos(k * Math.PI / 10) * r * 1.08, q[1] + Math.sin(k * Math.PI / 10) * r]);
     let h = hull(ring);
@@ -442,96 +470,54 @@
     h = h.map(([x, y]) => {
       const a = Math.atan2((y - cy) / (ry || 1), (x - cx) / (rx || 1));
       const ex = cx + Math.cos(a) * rx, ey = cy + Math.sin(a) * ry;
-      return [x * 0.55 + ex * 0.45, y * 0.55 + ey * 0.45];
+      return [x * (1 - round) + ex * round, y * (1 - round) + ey * round];
     });
     return 'M' + h.map((q) => `${q[0].toFixed(1)},${q[1].toFixed(1)}`).join(' L') + 'Z';
   }
 
-  function roundedHull(points, r) {
-    // the hull of the node centres grown by r: straight sides joined by arcs, a soft zone around its members
-    if (!points.length) return '';
-    if (points.length === 1) {
-      const [x, y] = points[0];
-      return `M${x - r},${y} a${r},${r} 0 1,0 ${2 * r},0 a${r},${r} 0 1,0 ${-2 * r},0Z`;
-    }
-    const h = points.length === 2 ? points : hull(points);
-    const n = h.length;
-    const cx = h.reduce((a, p) => a + p[0], 0) / n, cy = h.reduce((a, p) => a + p[1], 0) / n;
-    const normals = h.map((p, i) => {
-      const q = h[(i + 1) % n];
-      let nx = q[1] - p[1], ny = -(q[0] - p[0]);
-      const len = Math.hypot(nx, ny) || 1;
-      nx /= len; ny /= len;
-      if (nx * ((p[0] + q[0]) / 2 - cx) + ny * ((p[1] + q[1]) / 2 - cy) < 0) { nx = -nx; ny = -ny; }
-      return [nx, ny];
-    });
-    const f = (v) => v.toFixed(1);
-    let d = '';
-    for (let i = 0; i < n; i++) {
-      const p = h[i], q = h[(i + 1) % n], [nx, ny] = normals[i], [mx, my] = normals[(i + 1) % n];
-      if (!i) d += `M${f(p[0] + nx * r)},${f(p[1] + ny * r)}`;
-      d += ` L${f(q[0] + nx * r)},${f(q[1] + ny * r)}`;
-      const sweep = nx * my - ny * mx > 0 ? 1 : 0;
-      d += ` A${f(r)},${f(r)} 0 0,${sweep} ${f(q[0] + mx * r)},${f(q[1] + my * r)}`;
-    }
-    return d + 'Z';
-  }
-
+  const NS = 'http://www.w3.org/2000/svg';
   const zoneEls = new Map();
   const zoneAnchor = new Map();
 
   function syncZones() {
+    // the hulls are fixed in layout space; only the viewport transform follows the camera
     const svg = $('zones');
-    const z = cy.zoom();
-    const pad = 58 * z;
+    const z = cy.zoom(), pan = cy.pan();
+    const tf = `translate(${pan.x.toFixed(2)} ${pan.y.toFixed(2)}) scale(${z.toFixed(5)})`;
     for (const team of model.teams) {
-      const i = model.zoneOf.get(team);
-      const color = C.zones[i % C.zones.length];
-      const members = cy.nodes().filter((n) => placeOf(model.nodes.get(n.id())).team === team && !n.hasClass('drift'));
+      const r = regions.get(team);
+      if (!r || !r.hull) continue;
+      const color = C.zones[model.zoneOf.get(team) % C.zones.length];
       let g = zoneEls.get(team);
       if (!g) {
-        g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g = document.createElementNS(NS, 'g');
         g.setAttribute('class', 'zone');
-        g.innerHTML = '<path/><text/>';
+        g.innerHTML = '<path vector-effect="non-scaling-stroke"/><text/>';
+        g.querySelector('path').setAttribute('d', r.hull);
         g.querySelector('text').textContent = team;
         svg.appendChild(g);
         zoneEls.set(team, g);
       }
       const path = g.querySelector('path'), text = g.querySelector('text');
-      if (!members.length) { path.setAttribute('d', ''); text.textContent = ''; continue; }
-      const pts = members.map((n) => { const p = n.renderedPosition(); return [p.x, p.y]; });
-      const reg = regions.get(team);
-      if (reg) {  // the label sits at the top of the region: keep it inside the zone
-        const pan = cy.pan();
-        pts.push([pan.x + z * (reg.x0 + (reg.x1 - reg.x0) * 0.24), pan.y + z * (reg.y0 + 40)]);
-      }
-      path.setAttribute('d', softHull(pts, pad));
-      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
-      const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad, minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad;
-      const lit = g.classList.contains('lit');
-      const hint = g.classList.contains('reached');
-      const red = g.classList.contains('red');
-      const stroke = red ? C.red : lit || hint ? C.blue : color;
+      path.setAttribute('transform', tf);
+      const lit = g.classList.contains('lit'), hint = g.classList.contains('reached'), red = g.classList.contains('red');
       path.setAttribute('fill', color);
-      path.setAttribute('fill-opacity', lit ? '0.13' : '0.075');
-      path.setAttribute('stroke', stroke);
-      path.setAttribute('stroke-opacity', lit || red ? '0.75' : hint ? '0.4' : '0.28');
-      const lx = reg ? cy.pan().x + z * (reg.x0 + (reg.x1 - reg.x0) * 0.24) : minX + (maxX - minX) * 0.24;
-      const ly = reg ? cy.pan().y + z * (reg.y0 + 40) : minY + 34;
-      text.setAttribute('x', lx.toFixed(1));
-      text.setAttribute('y', (ly + 6).toFixed(1));
-      text.setAttribute('text-anchor', 'middle');
+      path.setAttribute('fill-opacity', lit ? '0.17' : '0.085');
+      path.setAttribute('stroke', red ? C.red : lit || hint ? C.blue : color);
+      path.setAttribute('stroke-opacity', red ? '0.75' : lit ? '0.65' : hint ? '0.42' : '0.3');
+      text.setAttribute('x', (pan.x + z * r.label.x).toFixed(1));
+      text.setAttribute('y', (pan.y + z * r.label.y + 6).toFixed(1));
+      text.setAttribute('text-anchor', r.label.anchor);
       text.setAttribute('fill', color);
-      const ring = [];
-      for (const q of pts) for (let k = 0; k < 16; k++) ring.push([q[0] + Math.cos(k * Math.PI / 8) * pad, q[1] + Math.sin(k * Math.PI / 8) * pad]);
-      zoneAnchor.set(team, { x: (minX + maxX) / 2, y: (minY + maxY) / 2, top: minY, edge: hull(ring) });
+      const edge = r.ring.map(([x, y]) => [pan.x + z * x, pan.y + z * y]);
+      zoneAnchor.set(team, { x: pan.x + z * r.cx, y: pan.y + z * r.cy, edge });
     }
   }
 
   const labelEls = new Map();
 
   function wantedLabels() {
-    // node id -> class ('', 'red', 'green', 'dim'); persons show initials inside, the full name below when relevant
+    // node id -> class ('', 'red', 'green', 'hover'); people show initials inside, the full name below when relevant
     const out = new Map();
     cy.nodes().forEach((n) => {
       let cls = null;
@@ -541,6 +527,7 @@
       if (n.hasClass('ghost')) cls = null;
       if (cls !== null) out.set(n.id(), cls);
     });
+    if (hovered && !out.has(hovered) && !cy.getElementById(hovered).hasClass('ghost')) out.set(hovered, 'hover');
     return out;
   }
 
@@ -560,10 +547,10 @@
         box.appendChild(el);
         labelEls.set(id, el);
       }
-      el.className = 'nlabel' + (cls ? ' ' + cls : '');
+      el.className = 'nlabel' + (cls ? ' ' + cls : '') + (n.hasClass('pick') ? ' pick' : '');
       const p = n.renderedPosition();
-      el.style.left = `${p.x}px`;
-      el.style.top = `${p.y + (n.height() / 2) * z + 8 + (n.hasClass('pick') ? 6 : 0)}px`;
+      el.style.left = `${p.x.toFixed(1)}px`;
+      el.style.top = `${(p.y + (n.height() / 2) * z + 7 + (n.hasClass('pick') ? 4 : 0)).toFixed(1)}px`;
     }
   }
 
@@ -574,8 +561,8 @@
     const n = cy.getElementById(state.person);
     const p = n.renderedPosition(), r = (n.height() / 2) * cy.zoom();
     const bw = box.offsetWidth || 90, bh = box.offsetHeight || 28;
-    const spots = [[p.x, p.y + r + 46], [p.x + r + 16 + bw / 2, p.y - bh / 2], [p.x - r - 16 - bw / 2, p.y - bh / 2], [p.x, p.y - r - bh - 12]];
-    const others = cy.nodes().not(n).map((m) => m.renderedBoundingBox());
+    const spots = [[p.x, p.y + r + 40], [p.x - r - 16 - bw / 2, p.y - bh / 2], [p.x, p.y - r - bh - 12], [p.x + r + 16 + bw / 2, p.y - bh / 2]];
+    const others = cy.nodes().not(n).filter((m) => m.style('opacity') > 0.1).map((m) => m.renderedBoundingBox());
     const clear = ([x, y]) => others.every((b) => x + bw / 2 < b.x1 - 2 || x - bw / 2 > b.x2 + 2 || y + bh < b.y1 - 2 || y > b.y2 + 2);
     const [x, y] = spots.find(clear) || spots[0];
     box.style.left = `${x}px`;
@@ -587,14 +574,75 @@
     syncZones();
     syncLabels();
     syncPicked();
+    syncFlows();
     syncLinks();
+  }
+
+  // the lit path, drawn in the overlay: smooth curves from step to step with an arrowhead, so the person's reach reads
+  // left to right (top to bottom on a narrow portrait screen); each new hop draws itself in when the depth grows
+  const flowEls = new Map();
+
+  function overlayLayer(cls) {
+    const svg = $('overlay');
+    let g = svg.querySelector(`:scope > g.${cls}`);
+    if (!g) { g = document.createElementNS(NS, 'g'); g.setAttribute('class', cls); svg.appendChild(g); }
+    return g;
+  }
+
+  function flowGeometry(a, b) {
+    const z = cy.zoom();
+    const p = a.renderedPosition(), q = b.renderedPosition();
+    const ra = (a.width() / 2 + 2) * z + 2, rb = (b.width() / 2 + 2) * z + 3;
+    const AR = Math.max(8, 13 * Math.min(1.1, z + 0.15)), AW = AR * 0.48;
+    const f = (v) => v.toFixed(1);
+    const along = PORTRAIT ? q.y - p.y : q.x - p.x;
+    if (along > ra + rb + AR + 12) {
+      // leave the node towards the target (a fan, at most ~50 degrees off the reading direction), arrive level
+      if (!PORTRAIT) {
+        const t = Math.max(-0.85, Math.min(0.85, Math.atan2(q.y - p.y, q.x - p.x)));
+        const sx = p.x + Math.cos(t) * ra, sy = p.y + Math.sin(t) * ra, ex = q.x - rb, lx = ex - AR, k = (lx - sx) * 0.5;
+        return { line: `M${f(sx)},${f(sy)} C${f(sx + Math.cos(t) * k)},${f(sy + Math.sin(t) * k)} ${f(lx - k)},${f(q.y)} ${f(lx)},${f(q.y)}`,
+          head: `M${f(ex)},${f(q.y)} L${f(lx)},${f(q.y - AW)} L${f(lx)},${f(q.y + AW)}Z` };
+      }
+      const t = Math.max(-0.85, Math.min(0.85, Math.atan2(q.x - p.x, q.y - p.y)));
+      const sx = p.x + Math.sin(t) * ra, sy = p.y + Math.cos(t) * ra, ey = q.y - rb, ly = ey - AR, k = (ly - sy) * 0.5;
+      return { line: `M${f(sx)},${f(sy)} C${f(sx + Math.sin(t) * k)},${f(sy + Math.cos(t) * k)} ${f(q.x)},${f(ly - k)} ${f(q.x)},${f(ly)}`,
+        head: `M${f(q.x)},${f(ey)} L${f(q.x - AW)},${f(ly)} L${f(q.x + AW)},${f(ly)}Z` };
+    }
+    const dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+    const sx = p.x + ux * ra, sy = p.y + uy * ra, ex = q.x - ux * rb, ey = q.y - uy * rb, lx = ex - ux * AR, ly = ey - uy * AR;
+    return { line: `M${f(sx)},${f(sy)} L${f(lx)},${f(ly)}`,
+      head: `M${f(ex)},${f(ey)} L${f(lx - uy * AW)},${f(ly + ux * AW)} L${f(lx + uy * AW)},${f(ly - ux * AW)}Z` };
+  }
+
+  function syncFlows() {
+    const host = overlayLayer('flows');
+    const want = state.flows;
+    for (const [k, el] of flowEls) if (!want.has(k)) { el.remove(); flowEls.delete(k); }
+    for (const [k, fl] of want) {
+      const a = cy.getElementById(fl.a), b = cy.getElementById(fl.b);
+      if (!a.length || !b.length) continue;
+      let el = flowEls.get(k);
+      if (!el) {
+        el = document.createElementNS(NS, 'g');
+        el.setAttribute('class', 'flow');
+        el.dataset.edge = fl.edge;
+        el.style.setProperty('--delay', `${ms(fl.delay)}ms`);
+        el.innerHTML = '<path class="glow"/><path class="line" pathLength="1"/><path class="head"/><path class="hit"/>';
+        host.appendChild(el);
+        flowEls.set(k, el);
+      }
+      const g = flowGeometry(a, b);
+      for (const c of ['glow', 'line', 'hit']) el.querySelector(`.${c}`).setAttribute('d', g.line);
+      el.querySelector('.head').setAttribute('d', g.head);
+    }
   }
 
   // links drawn in the overlay: the bridge a person was the only one to hold, and the card-to-node line of the game
   const links = { bridges: [], card: null };
 
   function syncLinks() {
-    const svg = $('overlay');
+    const layer = overlayLayer('marks');
     let html = '';
     for (const [a, b] of links.bridges) {
       const za = zoneAnchor.get(a), zb = zoneAnchor.get(b);
@@ -604,7 +652,7 @@
       const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
       const ux = (q[0] - p[0]) / (Math.hypot(q[0] - p[0], q[1] - p[1]) || 1), uy = (q[1] - p[1]) / (Math.hypot(q[0] - p[0], q[1] - p[1]) || 1);
       const g = 14;
-      html += `<path d="M${p[0]},${p[1]} L${mx - ux * g},${my - uy * g} M${mx + ux * g},${my + uy * g} L${q[0]},${q[1]}" fill="none" stroke="${C.red}" stroke-width="2.2" stroke-dasharray="7 6" stroke-opacity="0.85"/>`
+      html += `<path d="M${p[0]},${p[1]} L${mx - ux * g},${my - uy * g} M${mx + ux * g},${my + uy * g} L${q[0]},${q[1]}" fill="none" stroke="${C.red}" stroke-width="2.2" stroke-dasharray="8 6" stroke-opacity="0.85"/>`
         + `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${C.red}"/><circle cx="${q[0]}" cy="${q[1]}" r="4.5" fill="${C.red}"/>`
         + `<path d="M${mx - uy * 9 - ux * 4},${my + ux * 9 - uy * 4} L${mx + uy * 9 - ux * 4},${my - ux * 9 - uy * 4} M${mx - uy * 9 + ux * 4},${my + ux * 9 + uy * 4} L${mx + uy * 9 + ux * 4},${my - ux * 9 + uy * 4}" stroke="${C.red}" stroke-width="2.2" stroke-linecap="round"/>`;
     }
@@ -622,7 +670,7 @@
           + `<circle cx="${x2}" cy="${y2}" r="5" fill="${C.green}"/><circle cx="${x1}" cy="${y1}" r="5" fill="${C.green}"/>`;
       }
     }
-    svg.innerHTML = html;
+    layer.innerHTML = html;
   }
 
   // ---- tooltip ------------------------------------------------------------------------------------------------------
@@ -719,17 +767,40 @@
   }
 
   // ---- state --------------------------------------------------------------------------------------------------------
-  const state = { phase: 'loading', person: null, depth: 1, shown: 0, seq: 0, lit: null, removed: null, game: null };
+  const state = { phase: 'loading', person: null, depth: 1, shown: 0, seq: 0, lit: null, removed: null, game: null, flows: new Map() };
 
   function setPhase(p) { state.phase = p; app.dataset.phase = p; }
 
   function clearClasses() {
-    cy.elements().removeClass('faded lit tail pick fwd back ghost island single saved succ snap snap-s snap-t weak after');
+    cy.elements().removeClass('faded soft under lit tail pick ghost island single saved succ snap snap-s snap-t after');
     cy.edges('.handover').remove();
     $('zones').querySelectorAll('.zone').forEach((g) => g.classList.remove('lit', 'red', 'reached'));
     hoverInfo.clear();
     links.bridges = [];
     links.card = null;
+    state.flows = new Map();
+  }
+
+  // glide a node to a spot (after `wait` ms), replacing any glide it is in; its own animation object, so the style
+  // transitions running on the node (a glow coming on) are left alone
+  function moveTo(n, to, { wait = 0, duration = MOVE_MS, easing = 'ease-in-out-cubic', animate = true } = {}) {
+    const prev = n.scratch('glide');
+    if (prev) { prev.stop(); n.removeScratch('glide'); }
+    clearTimeout(n.scratch('glideT'));
+    const go = () => {
+      const p = n.position();
+      if (Math.abs(p.x - to.x) < 0.5 && Math.abs(p.y - to.y) < 0.5) return;
+      if (!animate || REDUCED) { n.position(to); return; }
+      const a = n.animation({ position: { x: to.x, y: to.y }, duration, easing });
+      n.scratch('glide', a);
+      a.play();
+    };
+    if (wait && animate && !REDUCED) n.scratch('glideT', setTimeout(go, wait)); else go();
+  }
+
+  // send every node (but those in `keep`) back to where it lives
+  function goHome(animate, keep = new Set()) {
+    cy.nodes().forEach((n) => { if (!keep.has(n.id())) moveTo(n, model.home.get(n.id()), { animate }); });
   }
 
   function show(id, on) { $(id).hidden = !on; }
@@ -738,12 +809,8 @@
     state.seq++;
     state.person = null; state.lit = null; state.removed = null; state.game = null;
     clearClasses();
-    cy.nodes().forEach((n) => {
-      const h = model.home.get(n.id());
-      n.removeClass('drift');
-      if (animate && !REDUCED) n.animate({ position: h }, { duration: 600, easing: 'ease-in-out-cubic' });
-      else n.position(h);
-    });
+    cy.nodes().removeClass('drift');
+    goHome(animate);
     setPhase('landing');
     $('headline').textContent = 'Pick someone. See what leaves with them.';
     for (const id of ['headline']) show(id, true);
@@ -758,6 +825,7 @@
     state.person = person; state.depth = 1; state.shown = 0; state.lit = null;
     setPhase('picked');
     clearClasses();
+    goHome(true, new Set([person]));
     cy.elements().addClass('faded');
     cy.getElementById(person).removeClass('faded').addClass('pick');
     show('picked', true); show('depth', true);
@@ -811,16 +879,21 @@
     const my = ++state.seq;
     state.depth = d;
     setSlider(d);
-    let res;
-    try { res = await api.tool('what_leaves', { person, depth: d }); } catch (err) { setStatus(err.message); return; }
+    // the deepest answer fixes where every step goes, so moving the slider adds hops without reshuffling the drawn ones
+    let res, frame;
+    try {
+      [res, frame] = await Promise.all([api.tool('what_leaves', { person, depth: d }),
+        d === 4 ? null : api.tool('what_leaves', { person, depth: 4 }).catch(() => null)]);
+    } catch (err) { setStatus(err.message); return; }
     if (my !== state.seq || state.person !== person) return;
     record(`what_leaves(${person}, depth ${d})`, [toolCall('what_leaves', { person, depth: d }, res)]);
-    applyDepth(res.body, person, d);
+    applyDepth(res.body, person, d, (frame || res).body);
   }
 
-  function applyDepth(answer, person, d) {
-    const prev = state.shown;
-    const want = new Map();     // element id -> {ele, cls, dir, delay}
+  // the hops of an answer: the nodes it lights (and the owners at its tail), the lines between them, the zones it reaches
+  function collect(answer, person, prev) {
+    const items = new Map();    // node id -> {ele, cls ('lit' or 'tail'), step, parents, delay}
+    const flows = new Map();    // 'a>b' -> one hop of a lit path, drawn in the overlay
     const zones = new Set();
     const reached = new Set();
     const notes = new Map();
@@ -828,38 +901,71 @@
       const r = resolveSegment(s);
       if (!r) continue;
       const delay = Math.max(0, s.step - prev - 1) * STEP_MS;
-      const note = rowNote(s.row);
       if (r.zone) { (s.tail ? reached : zones).add(r.zone); continue; }
-      const cls = s.tail ? 'tail' : 'lit';
-      const prevE = want.get(r.edge.id());
-      if (!prevE || (prevE.cls === 'tail' && cls === 'lit')) want.set(r.edge.id(), { ele: r.edge, cls, dir: r.dir, delay });
-      const end = r.dir === 'fwd' ? r.edge.target() : r.edge.source();
-      const pn = want.get(end.id());
-      if (end.id() !== person && (!pn || (pn.cls === 'tail' && cls === 'lit'))) want.set(end.id(), { ele: end, cls, delay: delay + 60 });
-      for (const id of [r.edge.id(), end.id()]) {
+      const note = rowNote(s.row);
+      for (const id of [r.edge.id(), s.b]) {
         if (!notes.has(id)) notes.set(id, new Set());
         notes.get(id).add(note);
       }
+      if (s.b === person) continue;
+      const it = items.get(s.b);
+      if (s.tail) {  // the owners an affected system leans on: marked where they sit, no line
+        if (!it) items.set(s.b, { ele: cy.getElementById(s.b), cls: 'tail', step: s.step, parents: new Set(), delay });
+        continue;
+      }
+      if (!it || it.cls === 'tail') items.set(s.b, { ele: cy.getElementById(s.b), cls: 'lit', step: s.step, parents: new Set([s.a]), delay: delay + 60 });
+      else if (it.step === s.step) it.parents.add(s.a);
+      const key = `${s.a}>${s.b}`;
+      if (!flows.has(key)) flows.set(key, { a: s.a, b: s.b, edge: r.edge.id(), step: s.step, delay });
     }
-    // drop what is no longer lit
-    cy.elements('.lit, .tail').forEach((ele) => {
-      const w = want.get(ele.id());
-      if (!w || !ele.hasClass(w.cls)) ele.removeClass('lit tail fwd back').addClass('faded');
+    return { items, flows, zones, reached, notes };
+  }
+
+  function applyDepth(answer, person, d, frameAnswer) {
+    const prev = state.shown;
+    const { items, flows, zones, reached, notes } = collect(answer, person, prev);
+    const lit = new Map([...items].filter(([, w]) => w.cls === 'lit'));
+    const frame = new Map([...collect(frameAnswer || answer, person, 0).items].filter(([, w]) => w.cls === 'lit'));
+    for (const [id, w] of lit) if (!frame.has(id) || frame.get(id).step > w.step) frame.set(id, w);
+    const all = stepTargets(person, frame);
+    const targets = new Map([...all].filter(([id]) => id === person || lit.has(id)));
+    const wasLit = new Set(cy.nodes('.lit').map((n) => n.id()));
+
+    // drop what is no longer lit; dim the nodes a lit one would sit on
+    cy.nodes('.lit, .tail').forEach((n) => {
+      const w = items.get(n.id());
+      if (!w || !n.hasClass(w.cls)) n.removeClass('lit tail').addClass('faded');
+    });
+    cy.nodes('.under').removeClass('under');
+    const spots = [...targets.values()];
+    cy.nodes().forEach((n) => {
+      if (n.id() === person || lit.has(n.id()) || n.hasClass('quiet')) return;
+      const h = model.home.get(n.id());
+      if (spots.some((t) => Math.hypot(t.x - h.x, t.y - h.y) < 86)) n.addClass('under');
     });
     hoverInfo.clear();
     for (const [id, set] of notes) hoverInfo.set(id, [...set].slice(0, 3).join(''));
     const summary = (answer.rows || [])[0];
     if (answer.outcome !== 'answered_with_path') hoverInfo.set(person, `<div class="k">${esc(answer.note || answer.sentence || '')}</div>`);
     else if (summary) hoverInfo.set(person, `<div class="k">${esc(answer.sentence || '')}</div>`);
-    for (const w of want.values()) {
+
+    // the lit part glides into its steps (new hops one after another); everything else stays where it lives
+    cy.nodes().forEach((n) => {
+      const id = n.id();
+      const to = targets.get(id) || model.home.get(id);
+      const w = lit.get(id);
+      moveTo(n, to, { wait: w && !wasLit.has(id) ? w.delay : 0 });
+    });
+    for (const w of items.values()) {
+      if (w.cls === 'tail' && w.ele.hasClass('under')) continue;  // an owner a lit node sits on stays out of the way
       const apply = () => {
         if (state.person !== person || state.phase !== 'picked') return;
-        w.ele.removeClass('faded lit tail fwd back').addClass(w.cls);
-        if (w.dir) w.ele.addClass(w.dir);
+        w.ele.removeClass('faded under lit tail').addClass(w.cls);
         scheduleSync();
       };
-      if (w.delay && !REDUCED) setTimeout(apply, w.delay); else apply();
+      if (w.delay && !REDUCED && !wasLit.has(w.ele.id())) setTimeout(apply, w.delay); else apply();
     }
+    state.flows = flows;
     $('zones').querySelectorAll('.zone').forEach((g) => {
       const t = g.querySelector('text').textContent;
       g.classList.toggle('lit', zones.has(t));
@@ -867,6 +973,46 @@
     });
     state.shown = d;
     scheduleSync();
+  }
+
+  // Where the lit part goes: the person first, then one column per step (in a column the systems above the
+  // decisions), each column centred on what leads to it and ordered the same way, so the lines do not cross much.
+  // The columns start at the person and keep to the drawing; a node left at home under a lit one is dimmed out of the
+  // way (applyDepth). On a narrow portrait screen the columns are rows, read top to bottom.
+  function stepTargets(person, lit) {
+    const home = model.home.get(person);
+    const [A, B] = PORTRAIT ? ['y', 'x'] : ['x', 'y'];
+    const isDecision = (id) => model.nodes.get(id)?.kind === 'decision';
+    const steps = [...new Set([...lit.values()].map((w) => w.step))].sort((a, b) => a - b);
+    const n = steps.length;
+    const end = PORTRAIT ? H - 110 : W - 92;
+    const dMax = PORTRAIT ? 200 : 236, dMin = PORTRAIT ? 150 : 166;
+    let start = home[A];
+    let d = n ? Math.min(dMax, (end - start) / n) : dMax;
+    if (d < dMin) {
+      start = Math.max(PORTRAIT ? 110 : 96, end - n * dMin);
+      d = Math.min(dMin, (end - start) / n);
+    }
+    const out = new Map([[person, { [A]: start, [B]: home[B] }]]);
+    const lo = PORTRAIT ? 80 : Math.min(...[...regions.values()].filter((r) => r.label).map((r) => r.y0)) + 84;
+    const hi = PORTRAIT ? W - 80 : extent.y1 - 60;
+    // one column per step: its systems first, then its decisions, so the column reads person -> what they own ->
+    // what they decided -> what that touches
+    steps.forEach((step, c) => {
+      const from = (id) => {
+        const ps = [...lit.get(id).parents].map((q) => out.get(q)).filter(Boolean);
+        return ps.length ? ps.reduce((s, q) => s + q[B], 0) / ps.length : home[B];
+      };
+      const ids = [...lit.keys()].filter((id) => lit.get(id).step === step);
+      const want = new Map(ids.map((id) => [id, from(id)]));
+      const byWant = (a, b) => want.get(a) - want.get(b) || a.localeCompare(b);
+      const list = [...ids.filter((id) => !isDecision(id)).sort(byWant), ...ids.filter(isDecision).sort(byWant)];
+      const gap = Math.min(PORTRAIT ? 175 : 96, list.length > 1 ? (hi - lo) / (list.length - 1) : Infinity);
+      const centre = list.reduce((s, id) => s + want.get(id), 0) / list.length;
+      const top = Math.max(lo, Math.min(hi - (list.length - 1) * gap, centre - ((list.length - 1) * gap) / 2));
+      list.forEach((id, i) => out.set(id, { [A]: start + (c + 1) * d, [B]: top + i * gap }));
+    });
+    return out;
   }
 
   // the depth slider: four stops, click, drag or arrow keys
@@ -934,28 +1080,26 @@
     const singleDecisions = singles.filter((r) => r.item_kind === 'decision');
     const onlyLinks = (br.rows || []).filter((r) => r.kind === 'only_link' && r.person === person).map((r) => r.teams);
     const summary = (wo.rows || []).find((r) => r.kind === 'summary') || {};
-    state.removed = { person, wo, ss, br, islandItems, singles, singleDecisions, onlyLinks, summary };
+    state.removed = { person, wo, ss, br, islandItems, singles, singleDecisions, onlyLinks, summary, drift: new Map() };
 
     setPhase('removed');
     clearClasses();
     const me = cy.getElementById(person);
+    const drifting = new Set(islandItems.map((it) => it.item));
+    goHome(true, drifting);
     me.addClass('ghost');
-    me.connectedEdges().forEach((e) => e.addClass('snap ' + (e.source().id() === person ? 'snap-s' : 'snap-t')
-      + (e.data('type') === 'WORKED_ON' ? ' weak' : '')));
-    cy.elements().not(me).not(me.connectedEdges()).addClass('faded');
+    cy.elements().not(me).addClass('soft');
 
-    // islands drift away from the person, staying inside the drawing, and glow red
-    const homes = [...model.home.values()];
-    const box = { x0: Math.min(...homes.map((q) => q.x)) - 30, x1: Math.max(...homes.map((q) => q.x)) + 30,
-      y0: Math.min(...homes.map((q) => q.y)) + 20, y1: Math.max(...homes.map((q) => q.y)) - 10 };
+    // islands drift off to the free margin beside their zone and glow red
     const taken = [];
     for (const it of islandItems) {
       const n = cy.getElementById(it.item);
       if (!n.length) continue;
-      n.removeClass('faded').addClass('island drift');
-      const to = driftSpot(it.item, person, box, taken);
+      n.removeClass('soft').addClass('island drift');
+      const to = driftSpot(it.item, taken);
       taken.push(to);
-      if (REDUCED) n.position(to); else n.animate({ position: to }, { duration: 900, easing: 'ease-out-cubic' });
+      state.removed.drift.set(it.item, to);
+      moveTo(n, to, { duration: 900, easing: 'ease-out-cubic' });
       const through = it.through.map((c) => `${c.relation}${c.state === 'ended' ? ' (ended)' : ''}${c.count ? `, ${c.count} records` : ''}`).join('; ');
       hoverInfo.set(it.item, `<div class="red">Without ${esc(first(person))}, nobody in the graph is connected to it.</div>`
         + (through ? `<div class="k">Connected only through ${esc(person)}: ${esc(through)}</div>` : '')
@@ -964,10 +1108,17 @@
     for (const r of singles) {
       const n = cy.getElementById(r.item);
       if (!n.length || n.hasClass('island')) continue;
-      if (r.item_kind === 'decision') n.removeClass('faded').addClass('single');
+      if (r.item_kind === 'decision') n.removeClass('soft').addClass('single');
       hoverInfo.set(r.item, `<div class="red">Every record behind it was written by ${esc(person)}.</div>`
         + (r.title ? `<div class="k">${esc(r.title)}</div>` : '') + `<div class="ids">${esc((r.episodes || []).slice(0, 6).join(', '))}</div>`);
     }
+    // the person's own lines snap, where the other end is on screen (decisions and projects show only when they matter)
+    me.connectedEdges().forEach((e) => {
+      const other = e.source().id() === person ? e.target() : e.source();
+      const result = other.hasClass('island') || other.hasClass('single');
+      if (!result && (other.hasClass('quiet') || !['OWNS', 'DECIDED', 'LEADS'].includes(e.data('type')))) return;
+      e.removeClass('soft').addClass('snap ' + (e.source().id() === person ? 'snap-s' : 'snap-t'));
+    });
     links.bridges = onlyLinks;
     $('zones').querySelectorAll('.zone').forEach((g) => g.classList.toggle('red', onlyLinks.some((p) => p.includes(g.querySelector('text').textContent))));
 
@@ -980,26 +1131,28 @@
     counterTips(person);
     $('wall').textContent = summary.wall_ms !== undefined ? `measured ${summary.wall_ms} ms` : '';
     show('headline', false); show('counters', true); show('actions', true);
+    fit(true);  // the same view on a wide screen; on a phone the counters take more room at the top
     $('plan').focus({ preventScroll: true });
     scheduleSync();
   }
 
-  function driftSpot(item, person, box, taken) {
-    // away from the person, inside the drawing, and clear of every other node: the first free spot on a widening fan
-    const h = model.home.get(item), from = model.home.get(person);
-    const base = Math.atan2(h.y - from.y, h.x - from.x);
-    const others = [...model.home.entries()].filter(([id]) => id !== item).map(([, q]) => q).concat(taken);
-    let best = null, bestGap = -1;
-    for (const dist of [170, 210, 250, 130]) {
-      for (const turn of [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1]) {
-        const a = base + turn;
-        const q = { x: Math.max(box.x0, Math.min(box.x1, h.x + Math.cos(a) * dist)), y: Math.max(box.y0, Math.min(box.y1, h.y + Math.sin(a) * dist * 0.75)) };
-        const gap = Math.min(...others.map((o) => Math.hypot(o.x - q.x, o.y - q.y)));
-        if (gap >= 80) return q;
-        if (gap > bestGap) { best = q; bestGap = gap; }
+  function driftSpot(item, taken) {
+    // straight out to the free margin beside its zone (into the gap between the rows on a portrait screen)
+    const h = model.home.get(item), g = regions.get('');
+    if (!PORTRAIT) {
+      const x = h.x < W / 2 ? g.mx * 0.56 : W - g.mx * 0.56;
+      for (const dy of [0, 86, -86, 172, -172, 258, -258]) {
+        const y = Math.max(extent.y0 + 50, Math.min(extent.y1 - 60, h.y + dy));
+        if (taken.every((t) => Math.hypot(t.x - x, t.y - y) > 80)) return { x, y };
       }
+      return { x, y: h.y };
     }
-    return best;
+    const y = g.cy + (h.y < g.cy ? -g.gy * 0.42 : g.gy * 0.42);
+    for (const dx of [0, 180, -180, 360, -360]) {
+      const x = Math.max(90, Math.min(W - 90, h.x + dx));
+      if (taken.every((t) => Math.hypot(t.x - x, t.y - y) > 160)) return { x, y };
+    }
+    return { x: h.x, y };
   }
 
   function setCounter(k, n, label) {
@@ -1091,12 +1244,39 @@
     renderGame();
     for (const c of cards) {
       const n = cy.getElementById(c.item);
-      if (n.length && !n.hasClass('island') && !n.hasClass('single')) n.removeClass('faded').addClass('single');
+      if (n.length && !n.hasClass('island') && !n.hasClass('single')) n.removeClass('soft faded').addClass('single');
     }
-    state.focus = [person, ...cards.map((c) => c.item)].filter((id) => cy.getElementById(id).length);
+    // as in "Ask before ... leaves": what is in play gathers round the person, the rest of the company steps back
+    const ids = cards.map((c) => c.item).filter((id) => cy.getElementById(id).length);
+    const { centre, spots } = ringAround(person, ids);
+    cy.nodes().forEach((n) => { if (n.id() !== person && !spots.has(n.id())) n.removeClass('soft').addClass('faded'); });
+    if (ids.length) moveTo(cy.getElementById(person), centre);
+    for (const [id, spot] of spots) moveTo(cy.getElementById(id), spot);
+    const taken = [centre, ...spots.values()];
+    cy.nodes('.faded').forEach((n) => {
+      const h = n.position();
+      if (taken.some((t) => Math.hypot(t.x - h.x, t.y - h.y) < 84)) n.addClass('under');
+    });
+    state.focus = taken;
     fit(true, state.focus);
     scheduleSync();
     if (!cards.length) { await sleep(ms(900)); if (state.game && state.game.person === person) finish(); }
+  }
+
+  // a ring (an ellipse on a wide screen) round the person: up to six items on the arc that faces the cards (the line
+  // from a card to its item then never crosses the ring), more all round
+  function ringAround(person, ids) {
+    const home = model.home.get(person), n = ids.length;
+    const rx = PORTRAIT ? 230 : 270, ry = PORTRAIT ? 260 : 196;
+    const centre = { x: Math.max(extent.x0 + rx + 90, Math.min(extent.x1 - rx - 90, home.x)),
+      y: Math.max(extent.y0 + ry + 50, Math.min(extent.y1 - ry - 50, home.y)) };
+    const spots = new Map();
+    ids.forEach((id, i) => {
+      const arc = n <= 2 ? (2 * Math.PI) / 3 : n <= 6 ? (11 * Math.PI) / 9 : 2 * Math.PI;
+      const a = n === 1 ? 0 : n <= 6 ? -arc / 2 + (i * arc) / (n - 1) : -Math.PI / 2 + (i * 2 * Math.PI) / n;
+      spots.set(id, { x: centre.x + Math.cos(a) * rx, y: centre.y + Math.sin(a) * ry });
+    });
+    return { centre, spots };
   }
 
   function renderGame() {
@@ -1187,7 +1367,7 @@
       if (done) {
         g.saved++;
         g.resolved.set(c.item, { by: [...new Set(confirmed.map((e) => e.author))], episodes: found.episodes.map((e) => e.id), confirmIn: confirmed.map((e) => e.id) });
-        if (node.length) node.removeClass('island single faded').addClass('saved');
+        if (node.length) node.removeClass('island single soft faded').addClass('saved');
         hoverInfo.set(c.item, `<div class="green">As of ${esc(found.asOf)}, records by ${esc((found.after.authors || []).join(', '))}</div>`
           + `<div class="ids">${esc((found.after.episodes || []).join(', '))}</div>`);
         links.card = { el: card, node: c.item };
@@ -1228,12 +1408,17 @@
     }
     show('counters', true);
     cy.edges('.snap').addClass('after');
+    cy.nodes('.under').removeClass('under');
+    cy.nodes('.faded').removeClass('faded').addClass('soft');
 
-    for (const it of r.islandItems) {
-      if (!g.resolved.has(it.item)) continue;
-      const n = cy.getElementById(it.item);
-      n.removeClass('island drift').addClass('saved');
-      if (REDUCED) n.position(model.home.get(it.item)); else n.animate({ position: model.home.get(it.item) }, { duration: 800, easing: 'ease-in-out-cubic' });
+    // the items in play go back: what was handed over to its place, what still rests on the person to its margin
+    moveTo(cy.getElementById(g.person), model.home.get(g.person));
+    for (const c of g.cards) {
+      const n = cy.getElementById(c.item);
+      if (!n.length) continue;
+      const resolved = g.resolved.has(c.item);
+      if (resolved && n.hasClass('island')) n.removeClass('island drift').addClass('saved');
+      moveTo(n, resolved ? model.home.get(c.item) : r.drift.get(c.item) || model.home.get(c.item), { duration: 800 });
     }
     // who takes what: the person who confirmed in writing, else the plan's first candidate (a proposal)
     const lines = new Map(((g.plan.rows || []).filter((x) => x.kind === 'line')).map((x) => [x.item, x]));
@@ -1247,7 +1432,7 @@
         + `<span class="to${to ? '' : ' none'}">${esc(to || (['team', 'project'].includes(lines.get(item)?.item_kind) ? 'a new lead, to be named' : 'no one in the graph yet'))}${res && res.by.length ? ` <small>${esc(res.confirmIn.join(', '))}</small>` : ''}</span></div>`);
       if (to && cy.getElementById(to).length && cy.getElementById(item).length && !cy.getElementById(`handover|${item}|${to}`).length) {
         cy.add({ group: 'edges', data: { id: `handover|${item}|${to}`, source: item, target: to }, classes: 'handover' });
-        cy.getElementById(to).removeClass('faded').addClass('succ');
+        cy.getElementById(to).removeClass('soft faded').addClass('succ');
         hoverInfo.set(to, (hoverInfo.get(to) || '') + `<div class="green">${esc(item)}: ${esc(how)}</div>`);
       }
     }
@@ -1275,6 +1460,7 @@
   // ---- events -------------------------------------------------------------------------------------------------------
   function onTapNode(n) {
     const id = n.id();
+    hideTip();
     const kind = model.nodes.get(id)?.kind;
     if (kind !== 'person') return;
     if (state.phase === 'landing' || state.phase === 'picked') { if (id !== state.person) pick(id); return; }
@@ -1306,6 +1492,19 @@
     });
     for (const k of ['islands', 'decisions', 'bridges']) htmlTip(app.querySelector(`.counter[data-k="${k}"]`), () => (tips[k] ? tips[k]() : ''));
     htmlTip($('wall'), () => (tips.wall ? tips.wall() : ''));
+    // a lit hop in the overlay shows the same note as its edge: the relation, since when, the records behind it
+    const overlay = $('overlay');
+    overlay.addEventListener('mouseover', (ev) => {
+      const f = ev.target.closest && ev.target.closest('.flow');
+      if (!f) return;
+      const id = f.dataset.edge;
+      const tip = $('tip');
+      tip.innerHTML = describeEdge(id) + (hoverInfo.get(id) || '');
+      tip.hidden = !tip.innerHTML;
+      moveTip(ev);
+    });
+    overlay.addEventListener('mousemove', moveTip);
+    overlay.addEventListener('mouseout', (ev) => { if (ev.target.closest && ev.target.closest('.flow')) hideTip(); });
     initSlider();
     let t = null;
     addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { fit(false, state.phase === 'game' ? state.focus : null); scheduleSync(); }, 80); });
@@ -1350,7 +1549,7 @@
         const h = model.home.get(n.id());
         const [cx, cyy] = zoneCenter(model.nodes.get(n.id()).team);
         n.position({ x: h.x + (cx - h.x) * 0.16, y: h.y + (cyy - h.y) * 0.16 });
-        n.animate({ position: h }, { duration: 950, easing: 'ease-out-cubic' });
+        moveTo(n, h, { duration: 950, easing: 'ease-out-cubic' });
       });
     }
     scheduleSync();
