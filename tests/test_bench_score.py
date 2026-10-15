@@ -27,6 +27,22 @@ def verdict(truth, questions, qid, answer, evidence=None):
     return score(q, answer, evidence if evidence is not None else answer + " " + q["answer"], truth)
 
 
+def nothing_changed(questions):
+    """A question whose true answer is "nothing changed": Q019 asked after the corpus ends (since 0.3.0 the real Q019
+    has a change, the leaver's last day)."""
+    q = dict(questions["Q019"])
+    day = END.strftime("%Y-%m-%d")
+    q.update(id="Q019-after-end", as_of=day, source_ids=["DOC-14", "RB-10"],
+             question=f"What changed in system ownership since {day}?",
+             answer=f"Nothing changed in system ownership since {day}. An unsourced chat claim that Growth owns "
+                    "billing-api is not a change.")
+    return q
+
+
+def verdict_q(truth, q, answer):
+    return score(q, answer, answer + " " + q["answer"], truth)
+
+
 def test_current_owner_with_history_is_correct_and_not_stale(truth, questions):
     v = verdict(truth, questions, "Q001", "Luca Ostrander (Platform) owns billing-api, since 2026-09-22; before that "
                                            "Sana Petrov (Payments) until 2026-09-22. Sources: ADR-0009, msg-0148.")
@@ -76,9 +92,10 @@ def test_contrast_with_the_current_value_is_not_stale(truth, questions):
 
 
 def test_refused_claims_listed_after_a_semicolon_stay_qualified(truth, questions):
-    v = verdict(truth, questions, "Q019", "The memory records no OWNS change since 2026-09-23. 2 claims were refused, not "
-                                           "stored: Growth OWNS billing-api (no_source, conflicts_current); Sana Petrov OWNS "
-                                           "billing-api (older_than_current).")
+    q = nothing_changed(questions)
+    v = verdict_q(truth, q, f"The memory records no OWNS change since {q['as_of']}. 2 claims were refused, not "
+                            "stored: Growth OWNS billing-api (no_source, conflicts_current); Sana Petrov OWNS "
+                            "billing-api (older_than_current).")
     assert v["correct"] and not v["stale"]
 
 
@@ -92,11 +109,12 @@ def test_personal_data_must_be_refused_and_not_leaked(truth, questions):
 
 
 def test_negative_gold_needs_a_refusal(truth, questions):
-    assert verdict(truth, questions, "Q019", "Nothing changed in ownership since 2026-09-23.")["correct"]
-    assert not verdict(truth, questions, "Q019", "billing-api now belongs to Growth.")["correct"]
-    assert verdict(truth, questions, "Q019", "billing-api now belongs to Growth.")["stale"]
-    refused = verdict(truth, questions, "Q019", "The memory records no OWNS change since 2026-09-23. 2 claims were refused, "
-                                                "not stored: Growth OWNS billing-api (no_source, conflicts_current).")
+    q = nothing_changed(questions)
+    assert verdict_q(truth, q, f"Nothing changed in ownership since {q['as_of']}.")["correct"]
+    assert not verdict_q(truth, q, "billing-api now belongs to Growth.")["correct"]
+    assert verdict_q(truth, q, "billing-api now belongs to Growth.")["stale"]
+    refused = verdict_q(truth, q, f"The memory records no OWNS change since {q['as_of']}. 2 claims were refused, "
+                                  "not stored: Growth OWNS billing-api (no_source, conflicts_current).")
     assert refused["correct"] and not refused["stale"]
 
 
