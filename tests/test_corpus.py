@@ -9,7 +9,7 @@ from honest_memory.corpus import build, write_corpus
 from honest_memory.corpus.generator import END, START, main
 
 SEED = int(os.environ.get("CORPUS_TEST_SEED", "42"))
-TARGETS = {"ticket": 120, "chat": 220, "doc": 40}
+TARGETS = {"ticket": 120, "chat": 220, "doc": 47}  # docs: 40 + 9 of the departure scene (0.3.0), 51 in all
 
 
 def read_jsonl(path):
@@ -78,7 +78,7 @@ def test_counts_within_ten_percent(eps, questions):
     for kind, target in TARGETS.items():
         assert within(kinds[kind], target), (kind, kinds[kind])
     assert within(len(eps), 400)
-    assert within(len(questions), 66)  # 60 original + 6 impact questions
+    assert len(questions) == 82  # 60 original + 6 impact + 16 departure (N5) questions
 
 
 def test_episode_schema(eps):
@@ -240,7 +240,7 @@ def owner_at(gold, system, when):
 
 def test_generator_version_is_bumped():
     from honest_memory.corpus import GENERATOR_VERSION
-    assert GENERATOR_VERSION == "0.2.0"
+    assert GENERATOR_VERSION == "0.3.0"
 
 
 def test_architecture_overview_lists_dependencies(eps, gold):
@@ -256,7 +256,7 @@ def test_architecture_overview_lists_dependencies(eps, gold):
 def test_longest_upstream_chain_is_four_hops(gold):
     edges = dep_edges(gold)
     systems = {x for a, b, *_ in edges for x in (a, b)}
-    assert len(systems) == 9
+    assert len(systems) == 10  # the nine of the overview, plus fernhill-sso (N5), which depends on auth
     assert max(max(upstream_hops(edges, s, 9, "2026-10-12T00:00:00Z").values(), default=0) for s in systems) == 4
 
 
@@ -311,3 +311,89 @@ def test_impact_questions_cover_time_depth_and_empty_cases(questions):
     assert "reporting" in after and "reporting" not in before
     ledger_then = impact["What depends on ledger-db within 4 hops as of 2026-09-10, and who must be told?"]
     assert ledger_then["billing-api"][0] != ledger["billing-api"][0]  # billing-api changed owner on 2026-09-22
+
+
+# ---- N5: the departure scene (generator 0.3.0) --------------------------------------------------------
+def leaver_of(gold):
+    (row,) = [g for g in gold if g["predicate"] == "MEMBER_OF" and g["invalid_at"]]
+    return row["subject"], row["object"], row["invalid_at"]
+
+
+def test_n5_resignation_and_last_day_are_fourteen_days_apart(eps, gold):
+    name, team, end = leaver_of(gold)
+    (notice,) = [e for e in eps if e["title"] == f"Resignation: {name}"]
+    (last,) = [e for e in eps if e["title"] == f"Last day: {name}"]
+    assert last["ts"] == end and notice["ts"][:10] < last["ts"][:10]
+    from datetime import date
+    assert (date.fromisoformat(last["ts"][:10]) - date.fromisoformat(notice["ts"][:10])).days == 14
+    assert f"Last day: {last['ts'][:10]}." in notice["text"] and last["refs"] == [notice["id"]]
+    assert notice["author"] != name and last["author"] != name  # written by the team lead
+    assert max(e["ts"] for e in eps if e["author"] == name) < last["ts"]  # nothing from them after they left
+
+
+def test_n5_leaver_owns_two_systems_only_they_touch(eps, gold):
+    name, _, end = leaver_of(gold)
+    owns = [g for g in gold if g["predicate"] == "OWNS" and g["subject"] == name]
+    assert sorted(g["object"] for g in owns) == ["fernhill-sso", "oncall-runbook"]
+    assert all(g["invalid_at"] == end for g in owns)
+    for system in ("fernhill-sso", "oncall-runbook"):
+        workers = {g["subject"] for g in gold if g["predicate"] == "WORKED_ON" and g["object"] == system}
+        assert workers == {name}, system
+        declared = [e for e in eps if e["channel"] == "doc" and e["title"].endswith(f": {system}")]
+        assert len(declared) == 1 and declared[0]["author"] == name and "\nKind: " in declared[0]["text"]
+
+
+def test_n5_two_lone_decisions_govern_other_teams_and_one_is_shared(eps, gold, by_id):
+    name, team, _ = leaver_of(gold)
+    teams = {g["subject"]: g["object"] for g in gold if g["predicate"] == "MEMBER_OF"}
+    owners = {g["object"]: g["subject"] for g in gold if g["predicate"] == "OWNS" and not g["invalid_at"]
+              and "expected_gate" not in g}
+    decided = sorted(g["object"] for g in gold if g["predicate"] == "DECIDED" and g["subject"] == name)
+    assert decided == ["ADR-0014", "ADR-0015", "ADR-0016"]
+    lone, shared = [], []
+    for d in decided:
+        deciders = {g["subject"] for g in gold if g["predicate"] == "DECIDED" and g["object"] == d}
+        (system,) = [g["object"] for g in gold if g["predicate"] == "CONSTRAINS" and g["subject"] == d]
+        (lone if deciders == {name} else shared).append((d, system))
+        if deciders == {name}:
+            assert by_id[d]["author"] == name and teams[owners[system]] != team, d
+        else:
+            assert by_id[d]["author"] != name and f"Co-author: {name}" in by_id[d]["text"]
+    assert len(lone) == 2 and len(shared) == 1
+
+
+def test_n5_no_phone_promise_to_the_customer_anywhere(eps):
+    from honest_memory.corpus.templates import CUSTOMER
+    for e in eps:
+        text = e["text"].lower()
+        assert not ("promis" in text and ("phone" in text or CUSTOMER.lower() in text)), e["id"]
+        assert "phone call" not in text, e["id"]
+
+
+def test_n5_questions_cover_every_departure_type(questions):
+    n5 = [q for q in questions if q["scenario"] == "N5"]
+    assert {q["type"] for q in n5} >= {"departure_depth1", "departure_depth4", "single_source", "what_if", "bridges",
+                                        "successors", "not_in_graph"}
+    assert 12 <= len(n5) <= 16 and [q["id"] for q in questions[-len(n5):]] == [q["id"] for q in n5]
+
+
+def test_n5_earlier_ids_and_texts_do_not_move(eps):
+    """0.3.0 numbers its episodes after every 0.2.0 episode of their kind: 0.2.0 ids keep their meaning."""
+    by_id = {e["id"]: e for e in eps}
+    assert by_id["ADR-0009"]["title"].startswith("ADR-0009: Transfer billing-api ownership")
+    assert by_id["msg-0220"]["ts"] < "2026-10-12" and by_id["TCK-0120"]["author"] != ""
+    scene = [e for e in eps if e["id"] in ("DOC-14", "DOC-15", "DOC-16", "RB-10")]
+    assert len(scene) == 4 and int(max(e["id"] for e in eps if e["id"].startswith("msg-"))[4:]) > 220
+
+
+def test_seed_7_differs_and_still_has_a_departure(tmp_path):
+    seven, base = build(7), build(SEED)
+    assert seven.episodes != base.episodes and seven.questions != base.questions
+    name = next(g["subject"] for g in seven.gold if g["predicate"] == "MEMBER_OF" and g["invalid_at"])
+    assert any(e["title"] == f"Last day: {name}" for e in seven.episodes)
+    assert sum(1 for q in seven.questions if q["scenario"] == "N5") >= 12
+    write_corpus(seven, tmp_path / "corpus")
+    again = tmp_path / "again"
+    write_corpus(build(7), again / "corpus")
+    for f in ("episodes.jsonl", "gold_facts.jsonl", "questions.jsonl"):
+        assert (tmp_path / "corpus" / "7" / f).read_bytes() == (again / "corpus" / "7" / f).read_bytes()

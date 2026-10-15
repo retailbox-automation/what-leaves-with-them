@@ -5,7 +5,7 @@ exactly what the HTTP API and the OpenAI-format tools see. The model picks a too
 never writes Cypher, and writes go through the write gate.
 
 Env: HM_TENANT (default "demo"), FALKORDB_* (see store.connect), HM_AGENT (identity stamped on writes, default
-agent:mcp), HM_SESSION (default: one random id per server process), HM_MCP_READONLY=1 to hide remember/handoff.
+agent:mcp), HM_SESSION (default: one random id per server process), HM_MCP_READONLY=1 to hide remember/handoff and refuse handoff_plan with propose=true.
 
     python -m honest_memory.mcp_server
 """
@@ -38,9 +38,10 @@ INSTRUCTIONS = (
 class Memory:
     """Holds the FalkorDB connection for one tenant and runs tool calls as one identity."""
 
-    def __init__(self, tenant: str, db=None, agent: str | None = None, session: str | None = None):
+    def __init__(self, tenant: str, db=None, agent: str | None = None, session: str | None = None,
+                 readonly: bool = False):
         graph_name(tenant)  # fail at startup on a bad tenant name
-        self.tenant, self._db, self._lock = tenant, db, threading.Lock()
+        self.tenant, self._db, self._lock, self.readonly = tenant, db, threading.Lock(), readonly
         self.ctx = T.Context(agent=agent or os.environ.get("HM_AGENT", "agent:mcp"),
                              session=session or os.environ.get("HM_SESSION") or f"mcp-{uuid.uuid4().hex[:8]}")
 
@@ -51,6 +52,8 @@ class Memory:
         if graph_name(self.tenant) not in self._db.list_graphs():
             raise ToolError(f"tenant {self.tenant!r} has no graph in this FalkorDB; ingest a corpus first "
                             "(python -m honest_memory.ingest --corpus data/corpus/42 --tenant " + self.tenant + ")")
+        if self.readonly and T.TOOLS[name].writes_with(args):
+            raise ToolError(f"this server is read-only; {name} with these arguments would write")
         try:
             return T.call(Store(self._db, self.tenant), name, args, self.ctx).to_dict()
         except (T.ArgError, T.GateUnavailable) as exc:
@@ -73,9 +76,9 @@ def _entry(tool: T.Tool, memory: Memory) -> McpTool:
 
 
 def build_server(tenant: str | None = None, db=None, readonly: bool | None = None) -> MCPServer:
-    memory = Memory(tenant or os.environ.get("HM_TENANT", "demo"), db)
     if readonly is None:
         readonly = os.environ.get("HM_MCP_READONLY") == "1"
+    memory = Memory(tenant or os.environ.get("HM_TENANT", "demo"), db, readonly=readonly)
     entries = [_entry(t, memory) for t in T.TOOLS.values() if not (readonly and t.writes)]
     server = MCPServer("honest-memory", instructions=INSTRUCTIONS, version="0.0.1", tools=entries)
     server.memory = memory  # type: ignore[attr-defined]

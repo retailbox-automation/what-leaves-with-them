@@ -63,8 +63,17 @@ PREDICATES = {
         Predicate("DECIDED", "Person", "Decision"),
         Predicate("SUPERSEDES", "Decision", "Decision"),
         Predicate("DEPENDS_ON", "System", "System"),
+        # The decision governs how that system must work (from an ADR's "Constrains:" line).
+        Predicate("CONSTRAINS", "Decision", "System"),
     )
 }
+
+# Kinds of System nodes (property `kind`, absent on a plain service): a customer integration and a runbook are
+# Systems too, so ownership, work, dependencies and constraints need no new edge types.
+SYSTEM_KINDS = ("service", "integration", "runbook")
+
+# Facts a person holds only while they work here; a "last day" record ends them through the gate (CLOSE).
+ROLE_PREDICATES = ("OWNS", "MEMBER_OF", "LEADS")
 
 # Predicates the gate refuses outright: they would store personal data (hackathon rule 6).
 FORBIDDEN_PREDICATES = {"HAS_PHONE", "HAS_ADDRESS", "HAS_EMAIL", "HAS_BIRTHDATE", "HAS_CARD"}

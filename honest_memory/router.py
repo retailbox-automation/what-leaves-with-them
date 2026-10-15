@@ -61,6 +61,21 @@ def _pii(kind: str, subject: str) -> tuple[str, dict]:
     return "why", {"subject": subject, "predicate": predicate}
 
 
+# A full name as written, "Oskar Alvarez": capitalised words, matched case-sensitively inside the case-blind rules.
+PERSON = r"(?P<p>(?-i:[A-Z][\w'.-]*(?: [A-Z][\w'.-]*){1,3}))"
+
+
+def _leaves(m: re.Match, default_depth: int | None = None) -> tuple[str, dict]:
+    depth = _depth(m.string).get("depth") or default_depth
+    return "what_leaves", {"person": _clean(m["p"]), **({"depth": depth} if depth else {}), **_as_of(m.string)}
+
+
+def _promise(m: re.Match) -> tuple[str, dict]:
+    to = re.match(r"\s*(?P<to>[A-Z][\w&'-]*(?: [A-Z][\w&'-]*)*)", m["rest"] or "")
+    since = re.search(rf"\b(?:since|after) (?P<d>{DATE})", m.string)
+    return "promises", {"person": _clean(m["p"]), **({"to": to["to"]} if to else {}), **({"since": since["d"]} if since else {})}
+
+
 def _stale(m: re.Match) -> tuple[str, dict]:
     """A runbook or catalog entry versus the present: the history shows both."""
     system = m["sys"] if m["sys"] and m["sys"].lower() not in ("the", "this", "that", "a", "an") else None
@@ -87,6 +102,34 @@ RULES: tuple[Rule, ...] = (
     _rule("personal_data_person", rf"\b(?:what(?:'s| is)|give me|tell me) (?:the |their |his |her )?"
           rf"(?P<kind>{'|'.join(p for p, _ in PII_PREDICATES)}) (?:of|for) (?P<who>.+?)\??$",
           lambda m: _pii(m["kind"], _strip_article(re.sub(r"^customer (?:in|on|from)\s+", "", m["who"], flags=re.I)))),
+    # N5: a departure. Names are full person names; the tools resolve them.
+    _rule("promises", rf"\b(?:did|has|have|does) {PERSON} (?:ever )?(?:promise[ds]?|commit(?:ted)?(?: to)?|agree(?:d)? to|"
+          rf"guarantee[ds]?)\b(?P<rest>.*)$|\bwhat did {PERSON.replace('?P<p>', '?P<p2>')} promise\b(?P<rest2>.*)$",
+          lambda m: _promise(m) if m["p"] else _promise(re.match(r"(?P<p>.+?)\|(?P<rest>.*)", f"{m['p2']}|{m['rest2']}"))),
+    _rule("handoff_plan", rf"\b(?:make |build |draft |write )?(?:a |the )?handoff plan (?:for|of) (?P<p>.+?)"
+          rf"(?: (?:before|by|until) (?P<date>{DATE}))?[.?!]*$|\bplan (?:the )?handoff (?:for|of) (?P<p2>.+?)[.?!]*$",
+          lambda m: ("handoff_plan", {"person": _clean(m["p"] or m["p2"]), **({"last_day": m["date"]} if m["date"] else {})})),
+    _rule("successors", r"\bwho (?:could|can|should|might|would) (?:take over|step in) (?:from|for) (?P<p>.+?)\??$|"
+          r"\bsuccessors? (?:to|for|of) (?P<p2>.+?)\??$|\bwho could replace (?P<p3>.+?)\??$",
+          lambda m: ("successors", {"person": _clean(m["p"] or m["p2"] or m["p3"])})),
+    _rule("single_source", rf"\b(?:rests?|depends?|stands?) only on (?:the )?(?:records?|sources?|documents?) (?:written )?"
+          rf"by {PERSON}|\bwhat does only {PERSON.replace('?P<p>', '?P<p2>')} know\b|"
+          rf"\bsingle[- ]source\b.*?\b(?:for|of|by|on) {PERSON.replace('?P<p>', '?P<p3>')}",
+          lambda m: ("single_source", {"person": _clean(m["p"] or m["p2"] or m["p3"]), **_as_of(m.string)})),
+    _rule("without", rf"\b(?:nobody|no one|nothing) (?:be |would be |is )?connected to without (?P<p>.+?)\??$|"
+          rf"\bwithout {PERSON.replace('?P<p>', '?P<p2>')},? (?:what|who)\b|"
+          rf"\bif {PERSON.replace('?P<p>', '?P<p3>')} (?:leaves|left|were gone|was gone|is gone|quits|goes)\b.*"
+          rf"\b(?:islands?|cut off|disconnected|unconnected|orphaned)\b",
+          lambda m: ("without", {"person": _clean(m["p"] or m["p2"] or m["p3"])})),
+    _rule("what_leaves", rf"\bwhat (?:leaves|goes|walks out|would leave|would we lose|do we lose|does the company lose) "
+          rf"(?:with|if) {PERSON}",
+          _leaves),
+    _rule("what_leaves_held", rf"\bwhat does {PERSON} own,? lead,? (?:or|and) belong to\b", lambda m: _leaves(m, 1)),
+    _rule("what_leaves_decisions", rf"\bwhich decisions (?:of|by|made by) {PERSON} (?:govern|constrain|affect)\b",
+          lambda m: _leaves(m, 2)),
+    _rule("bridges", r"\b(?:strongest|biggest|top|main|best)? ?bridges? between teams\b|\bwho (?:is|are) the "
+          r"(?:only )?(?:person|people|ones?) link(?:ing|s) (?P<a>\w+) and (?P<b>\w+)|\bwho links (?:the )?\w+ and \w+",
+          lambda m: ("bridges", {**({"top": int(t[1])} if (t := re.search(r"\btop (\d+)", m.string)) else {})})),
     # is the claim true / why does the memory think so
     _rule("claim_check", rf"^(?:is|are|does|did) (?P<s>.+?) (?:the )?(?:current )?(?:owner of|owns?) (?P<o>{NAME})\??$",
           lambda m: ("why", {"subject": _strip_article(m["s"]), "predicate": "OWNS", "object": _clean(m["o"])})),

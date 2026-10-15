@@ -16,6 +16,7 @@ source record (chat message, ticket, document)            agent conclusion ("rem
                         GateDecision node (receipt) --CITES--> Episode
                                   |
               ACCEPT / CONFIRM / SUPERSEDE: typed edge written, old edge moved to WAS
+              CLOSE: a fact ended without a replacement (a last day), edge moved to WAS
               REJECT: nothing written except the receipt
                                   |
    agents (support, ops, company brain) <--- fixed tool catalogue (human-written Cypher) <--- FalkorDB
@@ -28,9 +29,9 @@ One FalkorDB graph per tenant (`hm_<tenant>`). A tenant is a different key, not 
 
 | Node | Key | Meaning |
 |---|---|---|
-| `Person` | name | employee of the (fictional) company |
+| `Person` | name | employee of the (fictional) company; a resignation record sets `notice_at`, `last_day`, `notice_source` |
 | `Team` | name | Payments, Platform, Support, Growth |
-| `System` | name | service such as `billing-api` |
+| `System` | name | service such as `billing-api`; `kind` is `integration` (a customer integration) or `runbook` when a document says so |
 | `Decision` | id | ADR, e.g. `ADR-0009`; `status` accepted or superseded |
 | `Episode` | id | a source record; `ts`, `channel`, `author`, `title`, `text` |
 | `GateDecision` | id | receipt for every attempted write, accepted or not |
@@ -49,6 +50,10 @@ Current facts are typed edges. Each carries `valid_at` (epoch seconds), `source_
 | `DECIDED` | Person → Decision | many |
 | `SUPERSEDES` | Decision → Decision | many |
 | `DEPENDS_ON` | System → System | many |
+| `CONSTRAINS` | Decision → System | many; the decision governs how that system must work (an ADR's `Constrains:` line) |
+
+A customer integration and an on-call runbook are `System` nodes with a `kind`, so ownership, work, dependencies
+and constraints need no new edge types.
 
 Record edges: `(Episode)-[:MENTIONS]->(entity)`, `(Episode)-[:REFERS_TO]->(Episode)`, `(GateDecision)-[:CITES]->(Episode)`, `(GateDecision)-[:ABOUT]->(entity)`, `(Agent)-[:WROTE]->(Finding)`, `(Finding)-[:ABOUT]->(entity)`, `(Finding)-[:DERIVED_FROM]->(Episode|GateDecision)`, `(Handoff)-[:FROM]->(Agent|Team)`, `(Handoff)-[:TO]->(Agent|Person)`, `(Handoff)-[:CITES]->(Episode)`.
 
@@ -68,7 +73,20 @@ Input: a candidate `{subject, predicate, object, valid_at, source_ids, proposer}
 | 6 | subject and object resolve to known entities of the right label (new entities only from documents) | REJECT `unknown_entity` |
 | 7 | same fact already current | CONFIRM: source added to the edge |
 | 8 | functional predicate with a different current value: candidate newer → SUPERSEDE (old edge to `WAS`), older → REJECT `older_than_current`. Before that: a claim dated after all the sources that state it → REJECT `valid_after_source`; a fact that was closed and is asserted again on evidence that is not newer than the closing, or only points at the old document → REJECT `closed_fact`; a superseded decision superseding another → REJECT `superseded_decision` | |
-| 9 | otherwise | ACCEPT |
+| 9 | the same fact was ended after the time the candidate speaks of (replayed old evidence) | REJECT `already_ended` |
+| 10 | otherwise | ACCEPT |
+
+**Ending a fact (CLOSE).** `submit_end(store, subject, predicate, object, sources, at)` ends a current fact
+without a replacement, for a person's last day. Checks 1-6 run unchanged (source exists, mentions both names, no
+personal data, known entities); then the fact must be current (else REJECT `not_current`, or `already_ended` when
+history holds it) and `at` must come after the fact began (else REJECT `older_than_current`). Outcome CLOSE: the
+typed edge moves to `WAS` with `invalid_at = at`, `closed_by` = the receipt id, and the receipt CITES the record.
+Ingest sends every line of a "last day" record (`- X is no longer a member of the T team.`, `- X no longer owns
+S.`, `- X no longer leads P.`) down this path. Afterwards `current_owner` of an orphaned system answers "no current
+owner; last owner X until D (closed by GD-..., citing DOC-..)" instead of guessing.
+
+**Proposed handoffs.** `submit_handoff(..., status="proposed")` writes a Handoff a person still has to approve
+(`handoff_plan` with `propose=true`); nothing is sent anywhere.
 
 Findings and handoffs use the same door: agent ids must look like `agent:name`, personal data is looked for in every text and name they carry, a refused receipt is not a source (`source_rejected`), and a record may not be dated before the sources it cites. An exact repeat of a current fact (same proposer, sources the edge already has) writes no new receipt; it bumps `repeats` on the first one. Episodes dated more than an hour ahead of the clock are refused before anything is stored. The attacks that found these holes, and how each was closed, are in `redteam/REPORT.md`.
 
@@ -76,28 +94,46 @@ The gate is plain code. A model may propose candidates; it never decides what is
 
 ## Tool catalogue
 
-Agents call tools; each tool is a parameterised, human-written Cypher query. Arguments that name things are resolved against the graph first, and a name that does not resolve stops the call with outcome `unknown_entity`.
+Agents call tools; each tool is a parameterised, human-written Cypher query. Arguments that name things are resolved against the graph first, and a name that does not resolve stops the call with outcome `unknown_entity`. Twenty-one tools: fourteen for systems, decisions and agent memory (`honest_memory/tools.py`), seven for a departure (`honest_memory/departure.py`). The same list reaches MCP, the HTTP API and the agent from one registry.
 
-| Tool | Question it answers | Graph work |
+| Tool | Question it answers | Cypher (the query constant, or the pattern) |
 |---|---|---|
-| `current_owner(system)` | who owns X now, and why do we believe it | `OWNS` + receipt + cited episodes |
-| `owner_at(system, date)` | who owned X on a date | `OWNS` ∪ `WAS{predicate:'OWNS'}` by interval |
-| `history(system)` | every owner change with sources | `WAS` + `OWNS` timeline |
-| `escalation_path(system)` | whom to call about X | owner → `MEMBER_OF` team ← `LEADS` lead |
-| `impact(system, depth)` | what depends on X and who must hear about it | `DEPENDS_ON*1..depth` upstream → current owners |
-| `who_knows(system)` | who has worked on X | `WORKED_ON` counts, PageRank |
-| `decision_trail(decision)` | how a decision evolved | `SUPERSEDES*` chain + `DECIDED` + sources |
-| `why(subject, predicate, object)` | why the memory believes or refused a fact | `GateDecision` receipts for that triple |
-| `what_changed(since)` | what the memory learned or closed since a date | receipts with ACCEPT/SUPERSEDE since T |
-| `path_between(a, b)` | how two things are connected | shortest path over current facts |
-| `recall(entity)` | what agents concluded before, and when | `Finding` nodes |
+| `current_owner(system)` | who owns X now, and why do we believe it; for an orphan, the last owner and the receipt that ended it | `(p:Person)-[r:OWNS]->(s:System {name: $system})` + `(s)<-[:ABOUT]-(g:GateDecision)-[:CITES]->(e:Episode)`; orphan: `_LAST_OWNER` |
+| `owner_at(system, date)` | who owned X on a date | `_OWNERS_AT`: `OWNS` ∪ `WAS {predicate: 'OWNS'}` by interval |
+| `history(system)` | every owner change with sources | `_OWNERS_AT` over all time |
+| `escalation_path(system)` | whom to call about X | `(s)<-[:OWNS]-(o)-[:MEMBER_OF]->(t:Team)<-[:LEADS]-(l)` |
+| `impact(system, depth, as_of)` | what depends on X and who must hear about it | `_IMPACT`: `(u:System)-[:DEPENDS_ON*1..{depth}]->(s)`, owners of each `u` |
+| `who_knows(system)` | who has worked on X | `(p:Person)-[w:WORKED_ON]->(s)`, ranked by `w.count` |
+| `decision_trail(decision)` | how a decision evolved | `_TRAIL`: `SUPERSEDES*1..6` both ways + `DECIDED` |
+| `why(subject, predicate, object)` | why the memory believes or refused a fact | `_WHY_BY_NAME` / `_WHY_BY_EPISODE`: receipts + the current fact |
+| `what_changed(since)` | what the memory learned, closed or refused since a date; closed rows name the closing receipt | typed edges with `valid_at > $t`, `WAS` with `invalid_at > $t`, REJECT receipts |
+| `path_between(a, b)` | how two things are connected | `algo.SPpaths` over current fact types, `relDirection: 'both'` |
+| `recall(entity)` | what agents concluded before, and when | `_FINDINGS`, `_HANDOFFS` |
+| `facts_about(entity)` | every current fact about an entity | `(n)-[r:OWNS|MEMBER_OF|...]-(m)` |
 | `remember(...)`, `handoff(...)` | write a finding or a handoff | through the gate |
+| `what_leaves(person, depth, as_of)` | depth 1: what they own, lead, belong to (also what a recorded last day ended); depth 2-4: decisions they made that govern systems others own, and what depends on those | `_HELD`; `_DECIDED_REACH`: `(me)-[:DECIDED]->(d)-[:CONSTRAINS]->(x)` then `(s)-[:DEPENDS_ON*0..{depth-2}]->(x)`; `_OWNED_REACH`; owners `_OWNER_AT` |
+| `single_source(person, as_of)` | live decisions and systems whose every source record this person wrote | `_LONE_DECISIONS`, `_LONE_SYSTEMS`: every fact about the item, `UNWIND r.source_ids`, `collect(DISTINCT e.author)`, size 1 |
+| `without(person)` | what nobody is connected to once they are gone (islands) | `_P_NODES`/`_P_LINKS` copied without the person into a temporary graph, `_WCC`: `algo.WCC`; components with no Person |
+| `bridges(top)` | who links teams; the only per-person score | projection written both ways into a temporary graph, `_BETWEENNESS`: `algo.betweenness` with `samplingSize` = node count; `_TEAM_LINKS` |
+| `successors(person)` | for each orphaned item, who worked on it or next to it (candidates) | `_NEAR` (`DEPENDS_ON` either way), `_GOVERNS` (`CONSTRAINS`), `_WORKERS` (`WORKED_ON` counts) |
+| `handoff_plan(person, last_day, propose)` | one list: item, why at risk (path), sources, candidates, action; plus the questions to ask the person before they go (one per single-source item, per orphan nobody else has worked on, and for promises the records cannot hold), each with why and the records so far; `propose=true` writes proposed Handoffs through the gate | the queries above, combined; `_EPISODES` for who wrote each record and when; writes via `submit_handoff(status="proposed")` |
+| `promises(person, since, to)` | promises in the written records since a date (default: the resignation) | `_RECORDS_SINCE`: episodes authored by or `MENTIONS` the person after `$since`; none → `not_in_graph` naming the channels searched |
+
+The departure tools work the same way before a vacation, a parental leave or a team move: ask before the person goes.
+
+**The graph gets richer from the handoff.** Answers to the plan's questions arrive as ordinary records (handoff notes by the person, a review by the successor) and go through the same gate: each line restates a fact the graph holds, so the gate CONFIRMs it and adds the record as a source. A decision whose records now have a second author is no longer single-source; `single_source` and `what_leaves` with `as_of` show the change (seed 42: two decisions rest only on the leaver the day before the session, none three days after; docs/DEMO-N5.md, section 10).
+
+**Time.** Tools with `as_of` read the facts in force that day (current edges with `valid_at` ≤ the day, `WAS` edges whose interval covers it) and, for `single_source`, only the source records dated by then. Without `as_of`, `what_leaves`, `single_source`, `successors` and `handoff_plan` read the present plus what the person held until a recorded last day (the gate's CLOSE receipts), so the question still has an answer after they have gone.
+
+**Temporary graphs.** `without` and `bridges` need a projection the tenant graph does not have (one person left out; every link both ways, because `algo.betweenness` follows edge direction). `Store.scratch()` creates `hm_<tenant>__<purpose>_<random>`, writes the projection with `UNWIND ... CREATE`, runs the algorithm and deletes the graph in a `finally`, also when a query fails (tested). On the demo corpus the whole `without` call, including building and deleting the copy, takes 10-25 ms on both engines.
+
+**Engine notes.** `algo.betweenness` is exact on 6.0.2 when `samplingSize` covers every node and samples sources on 4.22: `bridges` runs two seeds, reports exact scores when they agree and otherwise the mean of 8 seeded runs, marked as an estimate (docs/sponsor-feedback.md, items 6-7). "Decisions not superseded" is passed in as a list, because filtering it with `OPTIONAL MATCH` + `count()` + `WITH ... WHERE` drops later rows on 6.0.2 (item 8).
 
 Algorithms used only from the set present in both FalkorDB 4.22 (Cloud free) and 6.0.x: `algo.pageRank`, `algo.SPpaths`, `algo.WCC`, `algo.labelPropagation`, `algo.betweenness`.
 
 ## Answers
 
-Every answer is one of: `answered_with_path` (rows plus the hops), `answered_from_memory` (a Finding, with the date it was learned), `not_in_graph` (the entity exists, nothing connects the way the question assumed), `unknown_entity` (no such name, no query ran), and for writes `accepted` / `confirmed` / `superseded` / `refused` with the receipt. The model writes one sentence from the rows; a check rejects any sentence that names an entity absent from the rows, and the answer falls back to a sentence built from the rows.
+Every answer is one of: `answered_with_path` (rows plus the hops), `answered_from_memory` (a Finding, with the date it was learned), `not_in_graph` (the entity exists, nothing connects the way the question assumed), `unknown_entity` (no such name, no query ran), and for writes `accepted` / `confirmed` / `superseded` / `closed` / `refused` with the receipt. The model writes one sentence from the rows; a check rejects any sentence that names an entity absent from the rows, and the answer falls back to a sentence built from the rows.
 
 ## Compatibility
 
