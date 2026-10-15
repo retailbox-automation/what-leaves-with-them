@@ -219,12 +219,12 @@ Endpoints: `GET /health`, `GET /v1/{tenant}/tools`, `POST /v1/{tenant}/tools/{na
 **The agent** runs on a local open model through [Ollama](https://ollama.com); no paid API and no key. The default model is `DEFAULT_MODEL` in [honest_memory/agent.py](honest_memory/agent.py). With Ollama running:
 
 ```bash
-export HM_LLM_MODEL="$(python -c 'from honest_memory.agent import DEFAULT_MODEL; print(DEFAULT_MODEL)')"
-ollama pull "$HM_LLM_MODEL"
-HM_LLM_REASONING=none python -m honest_memory.agent ask "Which decisions of Oskar Alvarez govern systems that other teams own?" --tenant quillfield
+MODEL="$(python -c 'from honest_memory.agent import DEFAULT_MODEL; print(DEFAULT_MODEL)')"
+ollama pull "$MODEL"
+HM_LLM_MODEL="$MODEL" HM_LLM_REASONING=none python -m honest_memory.agent ask "Which decisions of Oskar Alvarez govern systems that other teams own?" --tenant quillfield
 ```
 
-With `HM_LLM_MODEL` set, `POST /ask` uses the model too; without it, the rule router answers. The model picks a tool and fills its arguments; the sentence it writes is checked against the rows, and a sentence built from the rows replaces it when the check fails.
+Start the API with `HM_LLM_MODEL` set and `POST /ask` uses the model too; without it, the rule router answers. The model picks a tool and fills its arguments; the sentence it writes is checked against the rows, and a sentence built from the rows replaces it when the check fails.
 
 **Examples and tests:**
 
@@ -233,7 +233,7 @@ python examples/two_agents.py --tenant two-agents --ingest --drop   # two agents
 python examples/departure_demo.py --ports 6379                     # the walkthrough in docs/DEMO-N5.md; two ports compare engines
 
 pip install -e '.[dev]'
-HM_TEST_PORTS=6379 python -m pytest -q                              # comma-separated ports run every test on each engine
+HM_TEST_PORTS=6379 python -m pytest -q    # comma-separated ports run every test on each engine; leave HM_LLM_MODEL unset
 ```
 
 The benchmark needs Ollama with two models ([bench/README.md](bench/README.md#reproduce)); the red team reproduces with `python redteam/run.py --ports <ports>` ([redteam/REPORT.md](redteam/REPORT.md#reproduce)). The public demo is two containers, FalkorDB v4.22.0 and the API, described in [docs/DEPLOY.md](docs/DEPLOY.md).
