@@ -138,6 +138,17 @@ Algorithms used only from the set present in both FalkorDB 4.22 (Cloud free) and
 
 Every answer is one of: `answered_with_path` (rows plus the hops), `answered_from_memory` (a Finding, with the date it was learned), `not_in_graph` (the entity exists, nothing connects the way the question assumed), `unknown_entity` (no such name, no query ran), and for writes `accepted` / `confirmed` / `superseded` / `closed` / `refused` with the receipt. The model writes one sentence from the rows; a check rejects any sentence that names an entity absent from the rows, and the answer falls back to a sentence built from the rows.
 
+## Panel
+
+`web/` is the one-page demo served at `/` (static files, no build step, `web/vendor/` holds cytoscape.js 3.34.3 with its licence). It reads the HTTP API only and never writes. Two read endpoints exist for it, both in `honest_memory/snapshot.py`:
+
+| Endpoint | What | Cypher |
+|---|---|---|
+| `GET /v1/{tenant}/graph` | people, teams, systems, decisions, projects; current facts in `edges`, facts a last-day record ended (WAS closed by a CLOSE receipt) in `ended`, people with a recorded resignation in `leaving`; `?as_of=YYYY-MM-DD` gives the facts in force that day | `NODES`, `CURRENT`, `ENDED`, `AS_OF` in `snapshot.py`; the trace is in the answer |
+| `GET /v1/{tenant}/episodes/{id}` | one source record; a line that looks like personal data is withheld | `MATCH (e:Episode {id: $id}) RETURN …` |
+
+The flow and the tools behind each step: pick a person, `what_leaves(person, depth)` 1–4; Remove, `without(person)`, `single_source(person, as_of = notice day)`, `bridges(top=3)`; Plan the handoff, `handoff_plan(person)` and `promises(person)`; answering a question, the CONFIRM receipts about the item since the notice, the records they cite, and `single_source(person, as_of = the day of those records)`. Show Cypher lists the queries and milliseconds of the last action from each answer's trace. `scripts/capture_panel_fixtures.py` records the same answers into `web/fixtures/`; the page reads them with `?data=fixtures` and falls back to them when the API does not answer.
+
 ## Compatibility
 
 FalkorDB Cloud free runs 4.22 (C engine); `falkordb/falkordb:latest` is 6.0.x (Rust engine). Tests run on both. Avoided on purpose: label expressions `n:A|B`, `all(e IN r …)` over a variable-length relationship, `db.idx.fulltext.createNodeIndex`, algorithms missing from 6.0.x.
