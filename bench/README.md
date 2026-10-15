@@ -13,12 +13,12 @@ uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e '.[ap
 ollama pull gemma4:26b-a4b-it-qat && ollama pull embeddinggemma
 docker run -d -p 6393:6379 falkordb/falkordb:v4.22.0        # or falkordb/falkordb:6.0.2
 
-.venv/bin/python -m bench.run --port 6393                    # all three systems, seed 42, about 2 minutes on an M-series Mac
+.venv/bin/python -m bench.run --port 6393                    # all three systems, seed 42, about 3 minutes on an M-series Mac
 ```
 
 `bench.run` builds the corpus fresh from the repo's generator (seed 42, deterministic), ingests it through the write gate into a throwaway tenant graph (`hm_bench_<random>`, dropped at the end), answers every question with each system, scores, and writes `bench/results/*` and `bench/RESULTS.md`.
 
-Every result set in this folder (other engine, stronger baselines, model thinking on), about 10 minutes: `PORT_422=6393 PORT_602=6390 bash bench/run_all.sh`. [`SENSITIVITY.md`](SENSITIVITY.md) is its summary.
+Every result set in this folder (other engine, stronger baselines, model thinking on), about 15 minutes: `PORT_422=6393 PORT_602=6390 bash bench/run_all.sh`. [`SENSITIVITY.md`](SENSITIVITY.md) is its summary.
 
 Other forms:
 

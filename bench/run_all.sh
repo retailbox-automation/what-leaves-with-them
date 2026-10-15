@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Every result set under bench/results, in the order they were produced. About 12 minutes on a laptop.
+# Every result set under bench/results, in the order they were produced. About 15 minutes on a laptop.
 #   PORT_422=6393 PORT_602=6390 bash bench/run_all.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
