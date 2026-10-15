@@ -315,7 +315,8 @@ def _what_leaves(a: Answer) -> str:
     when = f" as of {s['as_of']}" if s.get("as_of") else ""
     text = f"At depth 1{when}, {s['person']}: " + (", ".join(_held(r) for r in held) or "nothing held")
     if s["depth"] > 1:
-        parts = [f"{r['item']} ({r['hops']} hops via {r['decision'] or r['via']}, owner "
+        parts = [f"{r['item']} ({r['hops']} hops via {r['decision'] or r['via']}"
+                 f"{', only their records' if r.get('only_theirs') else ''}, owner "
                  f"{r['owner'] + (', ' + r['owner_team'] if r['owner_team'] else '') if r['owner'] else 'none'})"
                  for r in risk[:8]]
         more = f" and {len(risk) - 8} more" if len(risk) > 8 else ""
@@ -370,10 +371,12 @@ def _successors(a: Answer) -> str:
 
 def _handoff_plan(a: Answer) -> str:
     s = a.rows[0]
-    lines = [f"{r['item']}: {r['action']}" for r in a.rows[1:]]
+    lines = [f"{r['item']}: {r['action']}" for r in a.rows[1:] if r.get("kind") == "line"]
+    asks = [f"({r['n']}) {r['question']}" for r in a.rows[1:] if r.get("kind") == "question"]
     when = f" before {s['last_day']}" if s.get("last_day") else ""
     done = f" {s['proposed']} written as proposed handoffs." if s.get("proposed") else ""
-    return f"{s['lines']} handoff line{'s' if s['lines'] != 1 else ''} for {s['person']}{when}. " + " ".join(lines) + done
+    text = f"{s['lines']} handoff line{'s' if s['lines'] != 1 else ''} for {s['person']}{when}. " + " ".join(lines) + done
+    return text + (f" Questions to ask {s['person']}: " + " ".join(asks) if asks else "")
 
 
 def _promises(a: Answer) -> str:

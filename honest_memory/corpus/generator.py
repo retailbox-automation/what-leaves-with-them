@@ -390,6 +390,39 @@ class Builder:
                         return p
         return next(p for p in self.people if p not in self.lead.values())
 
+    def handoff_session(self, rng: Rng):
+        """Between notice and last day: the leaver answers the handoff questions about the decisions only they wrote
+        and about the integration (not the on-call runbook), and the named successor confirms the decisions in a
+        record of their own. Numbered after the rest of the scene (scene 2), so the scene's ids do not move."""
+        L = self.leaver
+        lone = [d for d in self.scene_adrs if not d["shared"]]
+        tally: dict[str, int] = {}
+        for d in lone:
+            for name, keys in self.work[d["system"]].items():
+                if name != L.name:
+                    tally[name] = tally.get(name, 0) + len(keys)
+        successor = min(tally, key=lambda n: (-tally[n], n))
+        self.successor = next(p for p in self.people if p.name == successor)
+        integration = next(s for s, spec in T.SCENE_SYSTEMS.items() if spec["kind"] == "integration")
+        lines = [f"- {d['key']} constrains {d['system']}: {T.HANDOFF_ANSWERS[d['system']]}." for d in lone]
+        dep = T.SCENE_SYSTEMS[integration]["depends_on"]
+        lines.append(f"- {integration} depends on {dep}: "
+                     + T.HANDOFF_ANSWERS[integration].format(decl=ph(self.scene_decl[integration])) + ".")
+        not_covered = [s for s in T.SCENE_SYSTEMS if s != integration]
+        notes_ts = at(7, 3, 14, rng.between(0, 59))
+        self.k["handoff_notes"] = self.add(
+            "DOC", notes_ts, L.name, f"Handoff notes: {L.name}",
+            f"Handoff notes: {L.name}.\nAnswers to the handoff questions, written before the last day "
+            f"({day(self.last_ts)}).\n" + "\n".join(lines)
+            + f"\nNot covered here: {', '.join(not_covered)}.",
+            [d["key"] for d in lone] + [self.scene_decl[integration]], scene=2)
+        confirms = [f"- {d['key']} constrains {d['system']}: {T.HANDOFF_CONFIRMS[d['system']]}." for d in lone]
+        self.k["handoff_review"] = self.add(
+            "DOC", notes_ts + timedelta(days=1, hours=1), successor, f"Handoff review: {successor}",
+            f"Handoff review: {successor}.\nI went through the handoff notes ({ph(self.k['handoff_notes'])}) with "
+            f"{L.name} and take over these decisions.\n" + "\n".join(confirms),
+            [self.k["handoff_notes"]] + [d["key"] for d in lone], scene=2)
+
     def departure(self):
         """One engineer resigns on D and leaves on D+14. Built after everything else from its own random stream
         and numbered after every 0.2.0 episode of its kind, so every 0.2.0 episode keeps its text and its id."""
@@ -448,6 +481,7 @@ class Builder:
             f"Last day: {day(last)}.\nUntil then {L.name} works as usual; the handover is planned with the "
             f"{L.team} lead.", scene=1)
         self.add("msg", at(7, 1, 15, rng.between(0, 59)), L.name, T.TEAM_CHANNEL[L.team], T.HANDOVER_NOTE, scene=1)
+        self.handoff_session(rng)
         self.leaver_projects = [name for name, p in self.project_lead.items() if p is L]
         ends = ([f"- {L.name} is no longer a member of the {L.team} team."]
                 + [f"- {L.name} no longer owns {s}." for s in T.SCENE_SYSTEMS]
@@ -486,6 +520,7 @@ class Plan:
         self.gold: list[dict] = []
         self.gold_new: list[dict] = []  # rows added by 0.3.0, numbered after every 0.2.0 row so those keep their ids
         self.author_of = {idmap[e.key]: e.author for e in b.eps}
+        self.ts_of_id = {idmap[e.key]: e.ts for e in b.eps}
         self.scene_keys = {e.key for e in b.eps if e.scene}
         self.questions: list[dict] = []
 
@@ -585,13 +620,15 @@ class Plan:
         L, last, ended = b.leaver, self.ts[k["last_day"]], {"ended_by": [self.i(k["last_day"])]}
         for name, decl in b.scene_decl.items():
             self.fact(L.name, "OWNS", name, self.ts[decl], [decl], invalid_at=last, scenario="N5", attrs=ended, new=True)
+        notes, review = k["handoff_notes"], k["handoff_review"]  # the handoff session CONFIRMs with new sources
         for a_, b_, src in b.scene_deps:
-            self.fact(a_, "DEPENDS_ON", b_, self.ts[src], [src], scenario="N5", new=True)
+            self.fact(a_, "DEPENDS_ON", b_, self.ts[src], [src, notes], scenario="N5", new=True)
         for d in b.scene_adrs:
             for author in d["authors"]:
                 self.fact(author.name, "DECIDED", d["key"], d["ts"], [d["key"]], scenario="N5",
                           attrs={"title": d["title"]}, new=True)
-            self.fact(d["key"], "CONSTRAINS", d["system"], d["ts"], [d["key"]], scenario="N5", new=True)
+            session = [] if d["shared"] else [notes, review]
+            self.fact(d["key"], "CONSTRAINS", d["system"], d["ts"], [d["key"], *session], scenario="N5", new=True)
 
     # -- questions
     def make_questions(self):
@@ -856,9 +893,11 @@ class Plan:
         def authors(ids):
             return {self.author_of[i] for i in ids}
 
-        def sources_of(name, preds):
+        def sources_of(name, preds, until=None):
+            """Source ids of every fact about `name`; with `until` (ISO), only facts and records dated by then."""
             return [i for g in facts + ended if name in (g["subject"], g["object"]) and g["predicate"] in preds
-                    for i in g["source_ids"]]
+                    and (until is None or g["valid_at"] <= until)
+                    for i in g["source_ids"] if until is None or iso(self.ts_of_id[i]) <= until]
 
         lone_decisions = [d for d in decided if authors(sources_of(d, ("DECIDED", "CONSTRAINS", "SUPERSEDES"))) == {L}]
         shared = [d for d in decided if d not in lone_decisions]
@@ -874,6 +913,19 @@ class Plan:
                  f"{', '.join(lone)}: every record behind them was written by {L}.{control}", lone_src, scenario="N5")
         self.ask("single_source", f"What does only {L} know?",
                  f"{', '.join(lone)}: no record by anyone else backs them.", lone_src, scenario="N5")
+        # before and after the handoff session: the successor's confirmation gives the lone decisions a second author
+        for when in (day(self.ts[k["handoff_notes"]] - timedelta(days=1)), day(self.ts[k["handoff_review"]] + timedelta(days=3))):
+            until = when + "T23:59:59Z"
+            then = [d for d in decided
+                    if authors(sources_of(d, ("DECIDED", "CONSTRAINS", "SUPERSEDES"), until)) == {L}]
+            then += [x for x in touched
+                     if authors(sources_of(x, ("OWNS", "WORKED_ON", "DEPENDS_ON", "CONSTRAINS"), until)) == {L}]
+            n_dec = sum(1 for x in then if x in decided)
+            self.ask("single_source", f"Which decisions and systems rest only on records written by {L} as of {when}?",
+                     f"{', '.join(then)}: {n_dec} decision{'s' if n_dec != 1 else ''} and {len(then) - n_dec} "
+                     f"system{'s' if len(then) - n_dec != 1 else ''} rest only on records written by {L}.",
+                     [x for x in then if x in decided] + [b.scene_decl[x] for x in then if x in b.scene_decl],
+                     as_of=when, scenario="N5")
 
         persons = {p.name for p in b.people}
         systems = set(T.SYSTEMS) | set(T.SCENE_SYSTEMS)
@@ -1080,8 +1132,13 @@ with their owners as of the question date.
 two systems nobody else touches (fernhill-sso, a customer integration, and oncall-runbook, the on-call runbook),
 write two ADRs alone that constrain systems of other teams, co-author a third (the control), and work on systems
 of two teams that otherwise share no one. Nothing anywhere records a phone promise to the customer.
+Between notice and last day a handoff session answers some of the handoff questions: the leaver writes
+{n5['notes_id']} (the two lone decisions and the integration, not the on-call runbook) and the named successor,
+{n5['successor']}, confirms the decisions in {n5['review_id']}. Both go through the gate as CONFIRMs that add a source to
+facts the graph already holds, so the decisions get a second author: rest only on the leaver, as of the day before
+the session, {n5['lone_before']}; three days after it, {n5['lone_after']}.
 The scene draws from its own random stream and is numbered after every 0.2.0 episode of its kind
-(DOC-14..16, RB-10, ADR-0014..0016, TCK-0121.., msg-0221..), so every 0.2.0 episode keeps its id and its text.
+(DOC-14..18, RB-10, ADR-0014..0016, TCK-0121.., msg-0221..), so every 0.2.0 episode keeps its id and its text.
 Its gold rows are numbered after the 0.2.0 rows and its {n5['questions']} questions come last.
 
 Gold answers that changed, and why:
@@ -1090,7 +1147,7 @@ Gold answers that changed, and why:
 - "Which ADRs were accepted since 2026-09-14" now lists ADR-0015 (new) and ADR-0013, which 0.2.0 left out by mistake.
 - The leaver's MEMBER_OF row now carries invalid_at (the last day); WORKED_ON ranks below the top shift where
   the leaver's new work enters a ranking (no "who knows the most" answer changes).
-- Tests: document target 40 -> 47, questions 66 -> 80, systems 9 -> 11 (10 in DEPENDS_ON), gate reason "ended".
+- Tests: document target 40 -> 47, questions 66 -> 82, systems 9 -> 11 (10 in DEPENDS_ON), gate reason "ended".
 """
 
 
@@ -1098,8 +1155,13 @@ def n5_summary(corpus: Corpus) -> dict:
     (row,) = [g for g in corpus.gold if g["predicate"] == "MEMBER_OF" and g["invalid_at"]]
     notice = next(e for e in corpus.episodes if e["title"] == f"Resignation: {row['subject']}")
     last = next(e for e in corpus.episodes if e["title"] == f"Last day: {row['subject']}")
+    notes = next(e for e in corpus.episodes if e["title"] == f"Handoff notes: {row['subject']}")
+    review = next(e for e in corpus.episodes if e["title"].startswith("Handoff review: "))
+    asof = [q for q in corpus.questions if q["scenario"] == "N5" and q["type"] == "single_source" and q["as_of"]]
     return {"leaver": row["subject"], "team": row["object"], "notice": notice["ts"][:10], "notice_id": notice["id"],
-            "last": last["ts"][:10], "last_id": last["id"],
+            "last": last["ts"][:10], "last_id": last["id"], "notes_id": notes["id"], "review_id": review["id"],
+            "successor": review["author"], "lone_before": asof[0]["answer"].split(":")[0],
+            "lone_after": asof[1]["answer"].split(":")[0],
             "questions": sum(1 for q in corpus.questions if q["scenario"] == "N5")}
 
 

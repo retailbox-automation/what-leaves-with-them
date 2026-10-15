@@ -72,14 +72,20 @@ def read_episodes(corpus_dir: str | Path) -> list[dict]:
     return sorted(episodes, key=lambda e: (e["ts"], e["id"]))
 
 
+def _instant(value: str) -> int:
+    return epoch(value if "T" in value else value + "T00:00:00Z")
+
+
 def ingest_corpus(store: Store, corpus_dir: str | Path, reset: bool = False,
-                  extractor: RuleExtractor | None = None, until: str | None = None) -> dict:
+                  extractor: RuleExtractor | None = None, until: str | None = None, start: str | None = None) -> dict:
     """Replay <corpus_dir>/episodes.jsonl in time order. Returns counts per outcome and per reason.
-    `until` (ISO date or datetime) replays only the episodes dated before it: the memory as it stood then."""
+    `until` (ISO date or datetime) replays only the episodes dated before it: the memory as it stood then. `start`
+    replays only those dated at or after it, to continue a replay with the same extractor."""
     episodes = read_episodes(corpus_dir)
     if until:
-        cut = epoch(until if "T" in until else until + "T00:00:00Z")
-        episodes = [e for e in episodes if epoch(e["ts"]) < cut]
+        episodes = [e for e in episodes if epoch(e["ts"]) < _instant(until)]
+    if start:
+        episodes = [e for e in episodes if epoch(e["ts"]) >= _instant(start)]
     if reset:
         store.drop()
     store.ensure_schema()

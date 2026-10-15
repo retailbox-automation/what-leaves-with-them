@@ -41,6 +41,8 @@ LAST_DAY_LINE = re.compile(r"^Last day: (?P<day>\d{4}-\d{2}-\d{2})\.$", re.M)
 END_MEMBER = re.compile(r"^- (?P<p>.+?) is no longer a member of the (?P<t>[A-Za-z]+) team\.$", re.M)
 END_OWNS = re.compile(rf"^- (?P<p>.+?) no longer owns (?P<s>{SYSTEM})\.$", re.M)
 END_LEADS = re.compile(r"^- (?P<p>.+?) no longer leads (?P<x>.+?)\.$", re.M)
+HANDOFF_CONSTRAINS = re.compile(rf"^- (?P<d>ADR-\d{{4}}) constrains (?P<s>{SYSTEM}): ", re.M)
+HANDOFF_DEPENDS = re.compile(rf"^- (?P<a>{SYSTEM}) depends on (?P<b>{SYSTEM}): ", re.M)
 ADR_SUPERSEDES = re.compile(r"^Supersedes: (?P<old>ADR-\d{4})\.$", re.M)
 ADR_TRANSFER = re.compile(rf"Ownership of (?P<s>{SYSTEM}) transfers from (?P<a>.+?) \((?P<ta>[A-Za-z]+)\) "
                           r"to (?P<b>.+?) \((?P<tb>[A-Za-z]+)\) effective")
@@ -187,6 +189,10 @@ class RuleExtractor:
                 out.append(self._standing(ep, m["b"], "OWNS", m["s"]))
         elif kind == "postmortem" and (m := PM_DECISION.search(text)):
             out.append(self._standing(ep, m["new"], "SUPERSEDES", m["old"]))
+        elif kind == "handoff":
+            # handoff notes and their review restate facts the graph holds; the gate CONFIRMs them with a new source
+            out += [self._standing(ep, m["d"], "CONSTRAINS", m["s"]) for m in HANDOFF_CONSTRAINS.finditer(text)]
+            out += [self._standing(ep, m["a"], "DEPENDS_ON", m["b"]) for m in HANDOFF_DEPENDS.finditer(text)]
         elif kind == "last_day":
             ends = ([(m["p"], "MEMBER_OF", m["t"]) for m in END_MEMBER.finditer(text)]
                     + [(m["p"], "OWNS", m["s"]) for m in END_OWNS.finditer(text)]
@@ -264,6 +270,8 @@ def _kind(ep: dict) -> str | None:
         return "resignation"
     if title.startswith("Last day: "):
         return "last_day"
+    if title.startswith(("Handoff notes: ", "Handoff review: ")):
+        return "handoff"
     if re.match(r"ADR-\d{4}: ", title):
         return "adr"
     return None

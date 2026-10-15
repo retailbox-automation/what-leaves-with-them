@@ -370,3 +370,18 @@ SCENE_WORK = (("fernhill-sso", 4), ("oncall-runbook", 3), ("reporting", 2), ("ad
 SCENE_WORK_TICKETS = 7
 
 HANDOVER_NOTE = "Writing handover notes for fernhill-sso and oncall-runbook this week."
+
+# The handoff session between the resignation and the last day: the leaver answers some of the handoff questions in
+# writing, the named successor confirms what they now hold. Each line repeats a fact the graph already has, so the gate
+# CONFIRMs it with one more source; the on-call runbook and any unwritten customer promise stay unanswered on purpose.
+HANDOFF_ANSWERS = {
+    "ledger-db": "the backup key rotates every 90 days and lives with the security on-call; restoring an older backup "
+                 "needs the key that was current when it was taken",
+    "reporting": "masking runs in the CSV export step, and the Growth lead grants the export role",
+    "fernhill-sso": "the SAML certificate for the customer rolls over once a year, two weeks before it expires, "
+                    "following the steps in {decl}",
+}
+HANDOFF_CONFIRMS = {
+    "ledger-db": "confirmed; I hold the key rotation schedule from now on",
+    "reporting": "confirmed; I review export role requests from now on",
+}

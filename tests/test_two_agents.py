@@ -53,7 +53,7 @@ def test_the_command_line_ingests_runs_and_drops_its_tenant(port, monkeypatch, c
     monkeypatch.delenv("HM_LLM_MODEL", raising=False)
     assert load_example().main(["--tenant", tenant, "--ingest", "--drop"]) == 0
     out = capsys.readouterr().out
-    assert "ingested 401 episodes" in out and "After the change" in out
+    assert "ingested 403 episodes" in out and "After the change" in out
     from falkordb import FalkorDB
 
     assert graph_name(tenant) not in FalkorDB(host="localhost", port=port).list_graphs()

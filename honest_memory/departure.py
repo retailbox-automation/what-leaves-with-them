@@ -212,12 +212,18 @@ def what_leaves(store, a: dict, ctx) -> Answer:
         return T._not_in_graph("what_leaves", args, f"{person} exists, but the graph records nothing they own, lead "
                                "or belong to" + (f", nor a decision of theirs that governs a system within {depth} hops"
                                                  if depth > 1 else "") + (f" as of {when.label}" if when else "") + ".")
+    records = {r["item"]: r for r in lone(store, person, t, info["ended"]) if r["item_kind"] == "decision"}
+    for r in risk:  # whose records stand behind the decision on this path, as of the same moment
+        if r["decision"] in records:
+            r["records_by"] = records[r["decision"]]["authors"]
+            r["only_theirs"] = records[r["decision"]]["single_source"]
     by_hops: dict[str, int] = {}
     for r in hold + risk:
         by_hops[str(r["hops"])] = by_hops.get(str(r["hops"]), 0) + 1
     summary = {"kind": "summary", "person": person, "depth": depth, "as_of": when.label if when else None,
                "depth_1": [r["item"] for r in hold], "depth_n": [r["item"] for r in hold + risk], "by_hops": by_hops,
                "teams_reached": sorted({r["owner_team"] for r in risk if r["owner_team"]}),
+               "decisions_only_theirs": sorted(d for d, r in records.items() if r["single_source"]),
                "last_day": info["last_day"]}
     paths = [_held_path(person, r) for r in hold] + [r.pop("path") for r in risk]
     ids = [i for r in hold + risk for i in r["source_ids"]] + info["end_sources"]
@@ -567,6 +573,62 @@ def _action(person: str, line: dict, by: str) -> str:
             f"to pair with them {by}.")
 
 
+_EPISODES = "UNWIND $ids AS i MATCH (e:Episode {id: i}) RETURN e.id, e.author, e.ts"
+_INTEGRATIONS = "MATCH (s:System) WHERE s.name IN $names AND s.kind = 'integration' RETURN s.name ORDER BY s.name"
+
+
+def questions_for(store, person: str, info: dict, items: list[dict], cand: dict, governs: dict, owners: dict,
+                  by: str) -> list[dict]:
+    """What to ask the person before they go: one question for every item that rests only on their records, one for
+    every orphaned item nobody else has worked on, and one for promises the records cannot hold. Each says why we
+    ask and which records exist so far. Plain text; nothing is written."""
+    lone_rows = {r["item"]: r for r in lone(store, person, FAR, info["ended"]) if r["single_source"]}
+    meta = {i: (author, ts) for i, author, ts in store.ro(_EPISODES, {"ids": sorted({e for r in lone_rows.values()
+                                                                                       for e in r["episodes"]})})}
+    notice = info["notice_at"] or FAR
+    out = []
+    for item in [i["item"] for i in items if i["item"] in lone_rows] + [i for i in lone_rows if i not in
+                                                                        {x["item"] for x in items}]:
+        r = lone_rows[item]
+        answered = [e for e in r["episodes"] if meta.get(e, (None, 0))[0] == person and meta[e][1] > notice]
+        alone = not (cand.get(item) or {}).get("candidates")
+        if r["item_kind"] == "decision":
+            governed = ", ".join(f"{s} (owner {owners[s][0]})" if s in owners else s for s in governs.get(item, []))
+            ask = f"Why was {item} decided, and what breaks in {governed or 'the systems it governs'} if it is undone?"
+            why = f"Every record behind {item} was written by {person}"
+        else:
+            ask = f"How is {item} run day to day, and where are the steps written down?"
+            why = f"Every record about {item} was written by {person}"
+            if alone:
+                ask += f" Nobody else in the graph has worked on it: who should learn it {by}?"
+        if answered:
+            ask = f"Who besides {person} has read {', '.join(answered)} and can confirm what it says about {item}?"
+            why += f"; {person} answered in {', '.join(answered)}, but no one else has confirmed it yet"
+        out.append({"kind": "question", "item": item, "item_kind": r["item_kind"], "question": ask,
+                    "why": why + ".", "sources_so_far": r["episodes"], "answered_in": answered,
+                    "status": "answered by the leaver, waiting for a second person" if answered else "open"})
+    for i in items:
+        if i["item"] not in lone_rows and not cand[i["item"]]["candidates"] and i["item_kind"] == "system":
+            out.append({"kind": "question", "item": i["item"], "item_kind": i["item_kind"],
+                        "question": f"Who besides you has worked on {i['item']}, even informally? If no one, who "
+                                    f"should learn it {by}?",
+                        "why": f"No one else in the graph has worked on {i['item']}.",
+                        "sources_so_far": i["source_ids"], "answered_in": [], "status": "open"})
+    search = search_promises(store, person, info)
+    if not search["found"]:
+        integrations = [r[0] for r in store.ro(_INTEGRATIONS, {"names": [i["item"] for i in items]})]
+        out.append({"kind": "question", "item": "promises", "item_kind": "gap",
+                    "question": "Did you promise a customer or partner anything that is not written down, on a call "
+                                f"or in a meeting{', including for ' + ', '.join(integrations) if integrations else ''}? "
+                                f"If so, write it in a ticket {by}.",
+                    "why": f"No record written by or naming {person} since {search['since']} records a promise "
+                           f"({search['records']} records searched); calls and meetings are not recorded.",
+                    "sources_so_far": [], "answered_in": [], "status": "open"})
+    for n, q in enumerate(out, 1):
+        q["n"] = n
+    return out
+
+
 def handoff_plan(store, a: dict, ctx) -> Answer:
     person, when, propose = a["person"].name, a.get("last_day"), bool(a.get("propose"))
     info = departure_of(store, person)
@@ -611,11 +673,13 @@ def handoff_plan(store, a: dict, ctx) -> Answer:
                 line.update(handoff=None, to=None, gate="not written: no candidate and no team to hand it to")
         rows.append(line)
         ids += i["source_ids"]
+    questions = questions_for(store, person, info, items, cand, governs, owners, by)
     summary = {"kind": "summary", "person": person, "last_day": last_day, "lines": len(rows),
-               "proposed": sum(1 for r in rows if r.get("handoff")), "notice_source": info["notice_source"]}
+               "proposed": sum(1 for r in rows if r.get("handoff")), "questions": len(questions),
+               "notice_source": info["notice_source"]}
     note = ("A plan, read-only: nothing was written or sent." if not propose else
             "Each line was written as a proposed Handoff through the write gate; a person approves it. Nothing was sent.")
-    return T._finish(Answer(A.ANSWERED_WITH_PATH, "handoff_plan", args, [summary] + rows, paths,
+    return T._finish(Answer(A.ANSWERED_WITH_PATH, "handoff_plan", args, [summary] + rows + questions, paths,
                             T._sources(store, ids + ([info["notice_source"]] if info["notice_source"] else [])),
                             T._receipts(store, receipts), note=note))
 
@@ -641,9 +705,8 @@ def _snippet(text: str, match: re.Match) -> str:
     return "[redacted: personal data]" if detect_pii(line) else line
 
 
-def promises(store, a: dict, ctx) -> Answer:
-    person, when, to = a["person"].name, a.get("since"), (a.get("to") or "").strip()
-    info = departure_of(store, person)
+def search_promises(store, person: str, info: dict, when=None, to: str = "") -> dict:
+    """Records written by or naming the person after `when` (default: their resignation), and the promises in them."""
     if when:
         since, since_label, basis = when.end, when.label, ""
     elif info["notice_at"]:
@@ -651,24 +714,33 @@ def promises(store, a: dict, ctx) -> Answer:
         basis = f" (their resignation, {info['notice_source']})"
     else:
         since, since_label, basis = 0, "the start of the records", ""
-    args = {"person": person, "since": since_label, **({"to": to} if to else {})}
     records = store.ro(_RECORDS_SINCE, {"person": person, "since": since})
     by_channel = {c: 0 for c in CHANNELS}
-    found, paths = [], []
+    found = []
     for eid, ts, channel, author, title, text in sorted(records, key=lambda r: (r[1], r[0])):
         by_channel[channel] = by_channel.get(channel, 0) + 1
         m = PROMISE.search(text or "")
         if m and (not to or to.lower() in (text or "").lower()):
             found.append({"kind": "promise", "episode": eid, "at": iso_ts(ts), "channel": channel, "author": author,
                           "title": title, "line": _snippet(text, m)})
-            paths.append([person, "<-MENTIONS", eid] if author != person else [eid])
-    searched = {"kind": "searched", "person": person, "since": since_label, "records": len(records),
+    return {"since": since_label, "basis": basis, "records": len(records), "by_channel": by_channel, "found": found}
+
+
+def promises(store, a: dict, ctx) -> Answer:
+    person, when, to = a["person"].name, a.get("since"), (a.get("to") or "").strip()
+    info = departure_of(store, person)
+    res = search_promises(store, person, info, when, to)
+    since_label, basis, records, by_channel, found = (res["since"], res["basis"], res["records"], res["by_channel"],
+                                                      res["found"])
+    args = {"person": person, "since": since_label, **({"to": to} if to else {})}
+    paths = [[person, "<-MENTIONS", r["episode"]] if r["author"] != person else [r["episode"]] for r in found]
+    searched = {"kind": "searched", "person": person, "since": since_label, "records": records,
                 "by_channel": by_channel, "not_received": ["phone calls", "meetings", "email outside tickets"]}
     sources = T._sources(store, [info["notice_source"]] if info["notice_source"] else [])
     if not found:
         counts = ", ".join(f"{n} {c} record{'s' if n != 1 else ''}" for c, n in by_channel.items())
         note = (f"Not in the graph: no record written by or naming {person} after {since_label}{basis} records a "
-                f"promise{' involving ' + to if to else ''}. Searched {len(records)} records ({counts}). Phone calls "
+                f"promise{' involving ' + to if to else ''}. Searched {records} records ({counts}). Phone calls "
                 "and meetings are not channels this memory receives, so an unwritten promise cannot be in it.")
         return T._finish(Answer(A.NOT_IN_GRAPH, "promises", args, [searched], [], sources, note=note))
     return T._finish(Answer(A.ANSWERED_WITH_PATH, "promises", args, found + [searched], paths,

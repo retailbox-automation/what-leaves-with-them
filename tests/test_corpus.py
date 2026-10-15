@@ -9,7 +9,7 @@ from honest_memory.corpus import build, write_corpus
 from honest_memory.corpus.generator import END, START, main
 
 SEED = int(os.environ.get("CORPUS_TEST_SEED", "42"))
-TARGETS = {"ticket": 120, "chat": 220, "doc": 47}  # docs: 40 + 7 of the departure scene (0.3.0)
+TARGETS = {"ticket": 120, "chat": 220, "doc": 47}  # docs: 40 + 9 of the departure scene (0.3.0), 51 in all
 
 
 def read_jsonl(path):
@@ -78,7 +78,7 @@ def test_counts_within_ten_percent(eps, questions):
     for kind, target in TARGETS.items():
         assert within(kinds[kind], target), (kind, kinds[kind])
     assert within(len(eps), 400)
-    assert len(questions) == 80  # 60 original + 6 impact + 14 departure (N5) questions
+    assert len(questions) == 82  # 60 original + 6 impact + 16 departure (N5) questions
 
 
 def test_episode_schema(eps):

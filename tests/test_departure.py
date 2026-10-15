@@ -1,6 +1,7 @@
 """N5, the departure tools, on the seed-42 corpus ingested through the extractor and the gate, on every engine.
 
-The leaver of seed 42 is Oskar Alvarez (Platform): resignation DOC-15 on 2026-09-25, last day DOC-16 on 2026-10-09.
+The leaver of seed 42 is Oskar Alvarez (Platform): resignation DOC-15 on 2026-09-25, handoff session DOC-17 (his
+answers, 2026-10-01) and DOC-18 (Viktor Hartwell confirms, 2026-10-02), last day DOC-16 on 2026-10-09.
 Expected values are read off the generator's own plan where it has one (tests/test_corpus.py checks the plan).
 """
 
@@ -25,6 +26,16 @@ def corpus_store(request, tmp_path_factory):
     s = make_store(request.param, f"n5{request.param}")
     ingest_corpus(s, out)
     s.corpus_dir = out
+    yield s
+    s.drop()
+
+
+@pytest.fixture(scope="module", params=PORTS, ids=lambda p: f"falkordb:{p}")
+def corpus_before_session(request, tmp_path_factory):
+    """The memory during the notice period, before the handoff session (DOC-17, 2026-10-01)."""
+    out = write_corpus(CORPUS, tmp_path_factory.mktemp("corpus") / "corpus")
+    s = make_store(request.param, f"n5pre{request.param}")
+    ingest_corpus(s, out, until="2026-10-01")
     yield s
     s.drop()
 
@@ -97,8 +108,8 @@ def test_as_of_a_date_before_the_last_day_shows_what_was_still_held(corpus_store
 
 
 # ---- single source -----------------------------------------------------------------------------------------------------
-def test_single_source_lists_lone_decisions_and_systems_and_not_the_shared_one(corpus_store):
-    ans = call(corpus_store, "single_source", person=L)
+def test_single_source_before_the_handoff_session_lists_lone_decisions_and_systems_not_the_shared_one(corpus_store):
+    ans = call(corpus_store, "single_source", person=L, as_of="2026-09-30")
     by = {r["item"]: r for r in ans.rows[1:]}
     single = sorted(i for i, r in by.items() if r["single_source"])
     assert single == ["ADR-0014", "ADR-0015", "fernhill-sso", "oncall-runbook"]
@@ -106,6 +117,29 @@ def test_single_source_lists_lone_decisions_and_systems_and_not_the_shared_one(c
     assert by["ADR-0014"]["episodes"] == ["ADR-0014"] and "DOC-14" in by["fernhill-sso"]["episodes"]
     assert not by["reporting"]["single_source"] and len(by["reporting"]["authors"]) > 1
     assert ans.rows[0]["single_source"] == 4 and [L, "DECIDED", "ADR-0014"] in ans.paths
+
+
+def test_the_handoff_session_gives_the_lone_decisions_a_second_author(corpus_store):
+    """Item 8: the counts before and after the session, read with as_of, the same way on every engine."""
+    counts = {}
+    for day in ("2026-09-30", "2026-10-05"):
+        s = call(corpus_store, "single_source", person=L, as_of=day).rows[0]
+        w = call(corpus_store, "what_leaves", person=L, depth=4, as_of=day).rows[0]
+        counts[day] = (s["decisions"], s["systems"], w["decisions_only_theirs"])
+    assert counts == {"2026-09-30": (2, 2, ["ADR-0014", "ADR-0015"]), "2026-10-05": (0, 2, [])}
+    now = {r["item"]: r for r in call(corpus_store, "single_source", person=L).rows[1:]}
+    assert now["ADR-0014"]["authors"] == [L, "Viktor Hartwell"] and "DOC-18" in now["ADR-0014"]["episodes"]
+    assert now["fernhill-sso"]["single_source"] and "DOC-17" in now["fernhill-sso"]["episodes"]  # his answer alone
+    receipts = corpus_store.ro("MATCH (g:GateDecision) WHERE g.claim_episode IN ['DOC-17', 'DOC-18'] "
+                               "RETURN g.claim_episode, g.outcome, g.subject, g.predicate, g.object ORDER BY g.id")
+    assert receipts == [["DOC-17", "CONFIRM", "ADR-0014", "CONSTRAINS", "ledger-db"],
+                        ["DOC-17", "CONFIRM", "ADR-0015", "CONSTRAINS", "reporting"],
+                        ["DOC-17", "CONFIRM", "fernhill-sso", "DEPENDS_ON", "auth"],
+                        ["DOC-18", "CONFIRM", "ADR-0014", "CONSTRAINS", "ledger-db"],
+                        ["DOC-18", "CONFIRM", "ADR-0015", "CONSTRAINS", "reporting"]]
+    risk = {r["item"]: r for r in kind(call(corpus_store, "what_leaves", person=L, depth=2, as_of="2026-09-30"),
+                                       "at_risk")}
+    assert risk["ledger-db"]["only_theirs"] is True and risk["auth"]["only_theirs"] is False
 
 
 def test_single_source_as_of_reads_only_what_existed_then(corpus_store):
@@ -173,21 +207,27 @@ def test_bridge_scores_match_an_exact_computation_when_the_engine_is_exact(corpu
 
 
 # ---- successors --------------------------------------------------------------------------------------------------------------
-def test_successors_are_candidates_with_paths_and_honest_gaps(corpus_store):
-    ans = call(corpus_store, "successors", person=L)
+def test_successors_are_candidates_with_paths_and_honest_gaps(corpus_before_session):
+    ans = call(corpus_before_session, "successors", person=L)
     rows = {r["item"]: r for r in ans.rows}
     assert list(rows) == ["fernhill-sso", "oncall-runbook", "ADR-0014", "ADR-0015"]
     assert [c["person"] for c in rows["fernhill-sso"]["candidates"]] == ["Lars Thorne", "Pavel Hollis", "Sana Petrov"]
     assert rows["fernhill-sso"]["candidates"][0]["via"] == ["auth"]
     assert rows["oncall-runbook"]["candidates"] == [] and rows["oncall-runbook"]["note"] == \
         "no one in the graph has worked on this"
-    assert [c["person"] for c in rows["ADR-0014"]["candidates"]] == ["Viktor Hartwell", "Pavel Hollis", "Sana Petrov"]
-    assert [c["person"] for c in rows["ADR-0015"]["candidates"]] == ["Viktor Hartwell", "Omar Fenwick",
-                                                                     "Aiko Rademacher"]
+    for decision, system in (("ADR-0014", "ledger-db"), ("ADR-0015", "reporting")):  # as who_knows ranks them then
+        ranked = [r["person"] for r in T.call(corpus_before_session, "who_knows", {"system": system}).rows
+                  if r["person"] != L][:3]
+        assert [c["person"] for c in rows[decision]["candidates"]] == ranked and ranked[0] == "Viktor Hartwell"
     assert all(c["status"] == "candidate" for r in rows.values() for c in r["candidates"])
     assert ["Lars Thorne", "WORKED_ON", "auth", "<-DEPENDS_ON", "fernhill-sso"] in ans.paths
     assert ["Viktor Hartwell", "WORKED_ON", "ledger-db", "<-CONSTRAINS", "ADR-0014"] in ans.paths
     assert "decided" not in ans.sentence.lower().replace("not decisions", "")
+
+
+def test_after_the_session_the_confirmed_decisions_are_no_longer_orphaned(corpus_store):
+    rows = call(corpus_store, "successors", person=L).rows
+    assert [r["item"] for r in rows] == ["fernhill-sso", "oncall-runbook"]
 
 
 # ---- handoff_plan: read-only, then proposed through the gate ----------------------------------------------------------------
@@ -195,7 +235,8 @@ def handoffs(store):
     return store.ro("MATCH (h:Handoff) RETURN h.status, h.topic ORDER BY h.topic")
 
 
-def test_handoff_plan_is_read_only_by_default(corpus_store):
+def test_handoff_plan_is_read_only_by_default(corpus_before_session):
+    corpus_store = corpus_before_session
     before = handoffs(corpus_store)
     ans = call(corpus_store, "handoff_plan", person=L)
     assert handoffs(corpus_store) == before
@@ -208,6 +249,25 @@ def test_handoff_plan_is_read_only_by_default(corpus_store):
     assert ans.rows[0]["last_day"] == "2026-10-09" and ans.rows[0]["notice_source"] == "DOC-15"
     assert ans.paths[2][:5] == [L, "DECIDED", "ADR-0014", "CONSTRAINS", "ledger-db"]
     assert leftovers(corpus_store) == []
+    questions = kind(ans, "question")
+    assert [q["item"] for q in questions] == ["fernhill-sso", "oncall-runbook", "ADR-0014", "ADR-0015", "promises"]
+    assert all(q["status"] == "open" and q["answered_in"] == [] for q in questions)
+    assert questions[2]["question"] == ("Why was ADR-0014 decided, and what breaks in ledger-db (owner Mateo Sandoval) "
+                                        "if it is undone?")
+    assert questions[2]["sources_so_far"] == ["ADR-0014"]
+    assert "Nobody else in the graph has worked on it" in questions[1]["question"]
+    assert "including for fernhill-sso?" in questions[4]["question"] and "calls and meetings" in questions[4]["why"]
+
+
+def test_after_the_session_the_plan_asks_only_what_is_still_open(corpus_store):
+    ans = call(corpus_store, "handoff_plan", person=L)
+    assert [r["item"] for r in kind(ans, "line")] == ["fernhill-sso", "oncall-runbook"]
+    questions = {q["item"]: q for q in kind(ans, "question")}
+    assert list(questions) == ["fernhill-sso", "oncall-runbook", "promises"]
+    assert questions["fernhill-sso"]["answered_in"] == ["DOC-17"]
+    assert questions["fernhill-sso"]["status"] == "answered by the leaver, waiting for a second person"
+    assert questions["oncall-runbook"]["status"] == questions["promises"]["status"] == "open"  # unanswered on purpose
+    assert ans.rows[0]["questions"] == 3
 
 
 def test_handoff_plan_with_propose_writes_proposed_handoffs_through_the_gate(port, tmp_path):
@@ -216,13 +276,11 @@ def test_handoff_plan_with_propose_writes_proposed_handoffs_through_the_gate(por
         ingest_corpus(s, write_corpus(CORPUS, tmp_path / "corpus"))
         ans = call(s, "handoff_plan", person=L, propose=True)
         lines = kind(ans, "line")
-        assert [(r["to"], r["gate"]) for r in lines] == [("Lars Thorne", "ACCEPT"), ("Platform", "ACCEPT"),
-                                                         ("Viktor Hartwell", "ACCEPT"), ("Viktor Hartwell", "ACCEPT")]
-        assert [r.outcome for r in ans.receipts] == ["ACCEPT"] * 4 and ans.rows[0]["proposed"] == 4
+        assert [(r["to"], r["gate"]) for r in lines] == [("Lars Thorne", "ACCEPT"), ("Platform", "ACCEPT")]
+        assert [r.outcome for r in ans.receipts] == ["ACCEPT"] * 2 and ans.rows[0]["proposed"] == 2
         stored = s.ro("MATCH (h:Handoff {status: 'proposed'})-[:FROM]->(p:Person {name: $l}) "
                       "MATCH (h)-[:TO]->(t) RETURN h.topic, coalesce(t.name, t.id) ORDER BY h.topic", {"l": L})
-        assert stored == [["Handoff: ADR-0014", "Viktor Hartwell"], ["Handoff: ADR-0015", "Viktor Hartwell"],
-                          ["Handoff: fernhill-sso", "Lars Thorne"], ["Handoff: oncall-runbook", "Platform"]]
+        assert stored == [["Handoff: fernhill-sso", "Lars Thorne"], ["Handoff: oncall-runbook", "Platform"]]
     finally:
         s.drop()
 
@@ -232,8 +290,8 @@ def test_no_phone_promise_is_an_honest_not_in_graph_with_the_channels_searched(c
     ans = call(corpus_store, "promises", person=L, to="Fernhill Outfitters")
     assert ans.outcome == A.NOT_IN_GRAPH
     searched = ans.rows[0]
-    assert searched["since"] == "2026-09-25" and searched["records"] == 9
-    assert searched["by_channel"] == {"chat": 4, "ticket": 4, "doc": 1}
+    assert searched["since"] == "2026-09-25" and searched["records"] == 11  # + DOC-17, DOC-18 of the session
+    assert searched["by_channel"] == {"chat": 4, "ticket": 4, "doc": 3}
     assert "phone calls" in ans.note.lower() and "DOC-15" in ans.note and [s.id for s in ans.sources] == ["DOC-15"]
 
 

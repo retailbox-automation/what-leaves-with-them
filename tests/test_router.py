@@ -163,7 +163,7 @@ def test_gold_questions_answered_with_the_gold_names(gold_store):
     assert not any(r["phone_leak"] for r in result["rows"])
     assert result["all"] >= result["n"] - 2, summary
     n5 = [r for r in result["rows"] if r["id"] in {q["id"] for q in QUESTIONS if q["scenario"] == "N5"}]
-    assert len(n5) == 14 and all(r["right_tool"] and r["names"] and r["sources"] for r in n5), \
+    assert len(n5) == 16 and all(r["right_tool"] and r["names"] and r["sources"] for r in n5), \
         [(r["id"], r["missing_names"], r["missing_sources"]) for r in n5 if not (r["names"] and r["sources"])]
 
 
