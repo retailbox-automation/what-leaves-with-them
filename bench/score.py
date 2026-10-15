@@ -218,6 +218,8 @@ def stale_values(q: dict, answer: str, truth: Truth, required: set[str]) -> list
         if value in asked and kind != "refused":
             continue            # echoing a name the question gave is not a claim
         for sentence in _sentences(answer):
+            if truth.names[value] == "Team":
+                sentence = re.sub(r"\([^)]*\)", " ", sentence)       # "Aiko Rademacher (Growth)" labels, it does not claim
             if not truth.rx[value].search(sentence):
                 continue
             if not (slots & (truth.find(sentence) | asked)):

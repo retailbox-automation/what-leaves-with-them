@@ -168,6 +168,14 @@ def test_team_name_in_an_unrelated_sentence_is_not_a_rumour(truth, questions):
     assert verdict(truth, questions, "Q065", "billing-api now belongs to Growth.")["stale"]
 
 
+def test_team_label_in_parentheses_is_not_a_claim(truth, questions):
+    labelled = ("admin-console (Priya Farrow, Support), invoice-renderer (Viktor Hartwell, Payments), reporting (Aiko "
+                "Rademacher, Growth), webhooks (Luca Ostrander, Platform), notifications (Selma Marsh, Platform), "
+                "status-page (Tomas Kessler, Support).")
+    assert not verdict(truth, questions, "Q063", labelled)["stale"]
+    assert verdict(truth, questions, "Q063", "Route billing-api questions to Growth (msg-0174).")["stale"]
+
+
 def test_abstaining_is_not_stale_or_unsupported(truth, questions):
     v = verdict(truth, questions, "Q003", "The records do not contain information regarding who owns ledger-db.")
     assert v["abstained"] and not v["correct"] and not v["stale"] and not v["unsupported"]

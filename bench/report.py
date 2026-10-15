@@ -126,3 +126,49 @@ def write(out_dir: Path, report: Path, meta: dict, results: dict[str, list[dict]
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     report.write_text(render(summary, results), encoding="utf-8")
     return summary
+
+
+# --- sensitivity table: every result set under bench/results, one row per system ----------------------------------
+
+VARIANTS = (("", "plain-rag", "plain RAG, whole episodes, k=8 (the baseline in RESULTS.md)"),
+            ("plain-rag-k16", "plain-rag", "plain RAG, whole episodes, k=16"),
+            ("plain-rag-lines-k8", "plain-rag", "plain RAG, one line per unit, k=8"),
+            ("plain-rag-lines-k16", "plain-rag", "plain RAG, one line per unit, k=16"),
+            ("", "honest-router", "honest-memory router, FalkorDB 4.22"),
+            ("falkordb-6.0.2", "honest-router", "honest-memory router, FalkorDB 6.0.2"),
+            ("", "honest-agent", "honest-memory LLM agent, thinking off, FalkorDB 4.22 (the agent in RESULTS.md)"),
+            ("falkordb-6.0.2", "honest-agent", "honest-memory LLM agent, thinking off, FalkorDB 6.0.2"),
+            ("agent-thinking-default", "honest-agent", "honest-memory LLM agent, the model's own thinking, FalkorDB 4.22"))
+
+
+def sensitivity(results_dir: Path) -> str:
+    lines = ["# Sensitivity runs", "",
+             "The same 66 questions with the baseline made stronger, the other FalkorDB engine and the model's own thinking "
+             "left on. Each row is a full run; the files are under `bench/results/<variant>/`. The rows labelled "
+             "\"the baseline in RESULTS.md\" and \"the agent in RESULTS.md\" are the ones that file reports.", "",
+             "| run | correct % | stale % | unsupported % | no answer % | clean % | median ms | commit |",
+             "|---|---|---|---|---|---|---|---|"]
+    for folder, system, label in VARIANTS:
+        path = results_dir / folder / "summary.json"
+        if not path.exists():
+            continue
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if system not in data["systems"]:
+            continue
+        b = data["systems"][system]["overall"]
+        lines.append(f"| {label} | {b['correct']:.1f} | {b['stale']:.1f} | {b['unsupported']:.1f} | {b['abstained']:.1f} | "
+                     f"{b['clean']:.1f} | {b['median_ms']:,} | `{data['meta']['commit'].split()[0]}` |")
+    return "\n".join(lines) + "\n"
+
+
+def main(argv=None) -> int:
+    """python -m bench.report: write bench/SENSITIVITY.md from the result sets that exist."""
+    from .common import BENCH, RESULTS
+
+    (BENCH / "SENSITIVITY.md").write_text(sensitivity(RESULTS), encoding="utf-8")
+    print(f"wrote {BENCH / 'SENSITIVITY.md'}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
