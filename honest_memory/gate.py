@@ -379,6 +379,11 @@ def _record_checks(store: Store, text: str, source_ids: list[str], at: str) -> t
         return ["no_source"], when, found
     if not _found_ids(found):
         return ["source_not_found"], when, found
+    cited = {label: store.records(label, sids) for label, sids in found.items() if sids}
+    if any(r.get("outcome") == REJECT for r in cited.get("GateDecision", {}).values()):
+        return ["source_rejected"], when, found  # a refusal is a record of what was not believed, not evidence
+    if any(r.get("ts", 0) > when for records in cited.values() for r in records.values()):
+        return ["source_after_claim"], when, found
     return [], when, found
 
 

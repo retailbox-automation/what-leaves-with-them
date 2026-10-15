@@ -448,6 +448,21 @@ def test_finding_may_be_derived_from_a_receipt(store):
     assert got == [[gate.receipt_id]]
 
 
+def test_a_refused_receipt_is_not_a_source(store):
+    refused = submit_fact(store, cand(source_ids=[]))
+    assert refused.outcome == "REJECT"
+    res = finding(store, source_ids=[refused.receipt_id])
+    assert (res.outcome, res.reasons, res.written) == ("REJECT", ["source_rejected"], False)
+    assert handoff(store, source_ids=[refused.receipt_id]).reasons == ["source_rejected"]
+    assert count(store, "MATCH (f:Finding) RETURN count(f)") == 0 and count(store, "MATCH (h:Handoff) RETURN count(h)") == 0
+
+
+def test_a_finding_or_handoff_cannot_predate_its_sources(store):
+    assert finding(store, at="2026-08-01T00:00:00Z").reasons == ["source_after_claim"]  # DOC-01 is from 2026-08-17
+    assert handoff(store, at="2026-08-01T00:00:00Z").reasons == ["source_after_claim"]  # TCK-0001 is from 2026-09-23
+    assert finding(store, at="2026-08-17T12:00:00Z").outcome == "ACCEPT"  # the same minute as the source is fine
+
+
 def test_finding_with_an_unknown_entity_is_refused(store):
     res = finding(store, about=["billing-api", "no-such-system"])
     assert (res.outcome, res.reasons, res.written, res.record_id) == ("REJECT", ["unknown_entity"], False, None)
