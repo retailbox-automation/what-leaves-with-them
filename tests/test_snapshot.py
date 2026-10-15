@@ -3,8 +3,11 @@
 import pytest
 
 from honest_memory import snapshot
+from honest_memory.corpus.generator import build, write_corpus
+from honest_memory.ingest import ingest_corpus
 from honest_memory.store import epoch
 from honest_memory.tools import parse_when
+from tests.conftest import PORTS, make_store
 
 
 def edge_set(rows):
@@ -135,3 +138,34 @@ def test_episode_endpoint(fx_store, monkeypatch):
     assert body["author"] == "Selma Marsh" and body["title"].startswith("ADR-0009")
     assert client.get(f"/v1/{tenant}/episodes/NOPE-1").status_code == 404
     assert client.get(f"/v1/{tenant}/episodes/a%20b").status_code == 422
+
+
+@pytest.fixture(scope="module", params=PORTS, ids=lambda p: f"falkordb:{p}")
+def corpus_graph(request, tmp_path_factory):
+    """The seed-42 corpus through the real gate: the departure scene ends Oskar Alvarez's roles on his last day."""
+    out = write_corpus(build(42), tmp_path_factory.mktemp("corpus") / "corpus")
+    s = make_store(request.param, f"snap{request.param}")
+    ingest_corpus(s, out)
+    yield s
+    s.drop()
+
+
+def test_corpus_graph_as_the_panel_draws_it(corpus_graph):
+    g = snapshot.company_graph(corpus_graph)
+    kinds = {}
+    for n in g["nodes"]:
+        kinds[n["kind"]] = kinds.get(n["kind"], 0) + 1
+    assert kinds == {"person": 14, "team": 4, "system": 11, "decision": 16, "project": 5}
+    assert g["leaving"] == [{"person": "Oskar Alvarez", "notice_at": "2026-09-25T10:00:00Z", "last_day": "2026-10-09",
+                             "notice_source": "DOC-15"}]
+    assert edge_set(g["ended"]) == {("Oskar Alvarez", "MEMBER_OF", "Platform"), ("Oskar Alvarez", "OWNS", "fernhill-sso"),
+                                    ("Oskar Alvarez", "OWNS", "oncall-runbook")}
+    assert all(e["ended_by"] == ["DOC-16"] and e["until"] == "2026-10-09T22:00:00Z" for e in g["ended"])
+    node = {n["id"]: n for n in g["nodes"]}
+    assert node["Oskar Alvarez"]["team"] == "Platform" and node["fernhill-sso"]["team"] == "Platform"
+    assert node["fernhill-sso"]["system_kind"] == "integration" and node["ADR-0014"]["team"] == "Platform"
+    assert ("ADR-0014", "CONSTRAINS", "ledger-db") in edge_set(g["edges"])
+    during = snapshot.company_graph(corpus_graph, parse_when("2026-10-01"))
+    assert ("Oskar Alvarez", "OWNS", "fernhill-sso") in edge_set(during["edges"]) and during["ended"] == []
+    note = snapshot.episode(corpus_graph, "DOC-17")
+    assert note["author"] == "Oskar Alvarez" and "ADR-0014 constrains ledger-db" in note["text"]

@@ -558,12 +558,18 @@
   }
 
   function syncPicked() {
+    // below the name as in the frames; beside or above the person when a node sits there
     const box = $('picked');
     if (box.hidden || !state.person) return;
     const n = cy.getElementById(state.person);
-    const p = n.renderedPosition();
-    box.style.left = `${p.x}px`;
-    box.style.top = `${p.y + (n.height() / 2) * cy.zoom() + 46}px`;
+    const p = n.renderedPosition(), r = (n.height() / 2) * cy.zoom();
+    const bw = box.offsetWidth || 90, bh = box.offsetHeight || 28;
+    const spots = [[p.x, p.y + r + 46], [p.x + r + 16 + bw / 2, p.y - bh / 2], [p.x - r - 16 - bw / 2, p.y - bh / 2], [p.x, p.y - r - bh - 12]];
+    const others = cy.nodes().not(n).map((m) => m.renderedBoundingBox());
+    const clear = ([x, y]) => others.every((b) => x + bw / 2 < b.x1 - 2 || x - bw / 2 > b.x2 + 2 || y + bh < b.y1 - 2 || y > b.y2 + 2);
+    const [x, y] = spots.find(clear) || spots[0];
+    box.style.left = `${x}px`;
+    box.style.top = `${y}px`;
   }
 
   function sync() {
