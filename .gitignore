@@ -10,3 +10,4 @@ data/corpus/
 *.egg-info/
 .claude/
 deploy/COMMIT
+bench/.cache/

@@ -1,0 +1,155 @@
+{
+  "meta": {
+    "started": "2026-10-15T19:54:19Z",
+    "finished": "2026-10-15T19:55:06Z",
+    "wall_seconds": 46.7,
+    "seed": 42,
+    "generator_version": "0.2.0",
+    "corpus_sha256": "20891ae56d988f3512325c4e56a58d7eb1bc6724f312a671d18856f8666433f0",
+    "questions": 66,
+    "k": 16,
+    "chunk": "lines",
+    "reasoning": "none",
+    "commit": "c59ae69",
+    "ollama_version": "0.40.4",
+    "models": {
+      "chat": {
+        "name": "gemma4:26b-a4b-it-qat",
+        "digest": "2dd70431afed",
+        "parameters": "25.2B",
+        "quantization": "Q4_0"
+      },
+      "embedding": {
+        "name": "embeddinggemma",
+        "digest": "85462619ee72",
+        "parameters": "307.58M",
+        "quantization": "BF16"
+      }
+    },
+    "falkordb_version": "not used",
+    "falkordb_port": 6393,
+    "systems": [
+      "plain-rag"
+    ],
+    "ingest": {
+      "episodes": 382,
+      "gate_calls": 0,
+      "seconds": 0,
+      "outcomes": {}
+    }
+  },
+  "systems": {
+    "plain-rag": {
+      "overall": {
+        "n": 66,
+        "correct": 71.2,
+        "correct_literal": 65.2,
+        "correct_sentence_only": 71.2,
+        "stale": 4.5,
+        "unsupported": 0.0,
+        "abstained": 15.2,
+        "clean": 69.7,
+        "leaked": 2,
+        "median_ms": 569
+      },
+      "by_type": {
+        "adversarial": {
+          "n": 4,
+          "correct": 25.0,
+          "correct_literal": 25.0,
+          "correct_sentence_only": 25.0,
+          "stale": 25.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 25.0,
+          "leaked": 2,
+          "median_ms": 612
+        },
+        "current_state": {
+          "n": 23,
+          "correct": 100.0,
+          "correct_literal": 91.3,
+          "correct_sentence_only": 100.0,
+          "stale": 4.3,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 95.7,
+          "leaked": 0,
+          "median_ms": 521
+        },
+        "handoff": {
+          "n": 1,
+          "correct": 100.0,
+          "correct_literal": 0.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 549
+        },
+        "impact": {
+          "n": 6,
+          "correct": 16.7,
+          "correct_literal": 16.7,
+          "correct_sentence_only": 16.7,
+          "stale": 16.7,
+          "unsupported": 0.0,
+          "abstained": 33.3,
+          "clean": 16.7,
+          "leaked": 0,
+          "median_ms": 672
+        },
+        "provenance": {
+          "n": 9,
+          "correct": 88.9,
+          "correct_literal": 88.9,
+          "correct_sentence_only": 88.9,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 88.9,
+          "leaked": 0,
+          "median_ms": 570
+        },
+        "state_at_time": {
+          "n": 7,
+          "correct": 100.0,
+          "correct_literal": 100.0,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 755
+        },
+        "what_changed_since": {
+          "n": 6,
+          "correct": 100.0,
+          "correct_literal": 83.3,
+          "correct_sentence_only": 100.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 0.0,
+          "clean": 100.0,
+          "leaked": 0,
+          "median_ms": 805
+        },
+        "who_knows": {
+          "n": 10,
+          "correct": 0.0,
+          "correct_literal": 0.0,
+          "correct_sentence_only": 0.0,
+          "stale": 0.0,
+          "unsupported": 0.0,
+          "abstained": 80.0,
+          "clean": 0.0,
+          "leaked": 0,
+          "median_ms": 524
+        }
+      }
+    }
+  }
+}
