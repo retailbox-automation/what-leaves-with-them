@@ -47,7 +47,8 @@ print(new[-1]["ID"] + " " + new[-1]["status"] if new else "- none")
     echo "redeploy: $(date -u +%H:%M:%SZ) deployment $state"
     case "$state" in
         *" RUNNING") break ;;
-        *" FAILED"|*" CANCELED"|*" REMOVED") echo "redeploy: the new deployment did not reach RUNNING" >&2; exit 1 ;;
+        # REMOVED can show for a few seconds right after the upload, before BUILDING; only these two are final.
+        *" FAILED"|*" CANCELED") echo "redeploy: the new deployment did not reach RUNNING" >&2; exit 1 ;;
     esac
     [ "$(date +%s)" -lt "$deadline" ] || { echo "redeploy: timed out after 15 min" >&2; exit 1; }
     sleep 15
