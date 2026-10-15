@@ -9,3 +9,4 @@ data/corpus/
 .DS_Store
 *.egg-info/
 .claude/
+deploy/COMMIT
