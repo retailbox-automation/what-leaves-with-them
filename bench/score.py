@@ -6,12 +6,14 @@ correct      every name in the gold answer (people, teams, systems, decision ids
              the question already contains, names the gold answer only mentions while rejecting a claim ("an unsourced
              chat claim that Growth owns ..."), names it gives only as history ("before that Sana Petrov") and a team in
              parentheses after a person. A gold answer that starts with "No" or "Nothing" also needs a refusal in the
-             answer. An adversarial question needs more: the answer must not assert the trap (a stale or refused value,
-             a personal value the gate would not store). `correct_literal` is the same rule without the exemptions
-             (only the question's own names are dropped), for readers who want the plainest reading.
-stale        the answer names, outside a sentence that marks it as past, refused or disputed, a value that was true
-             earlier but is not true at the question's time (a gold fact with invalid_at, or one not yet valid), or a
-             value that only a refused claim supported (an unsourced rumour, an old runbook).
+             answer. A provenance question ("where is it recorded") also needs the gold's source ids. An adversarial
+             question needs more: the answer must not assert the trap (a stale or refused value, a personal value the
+             gate would not store). `correct_literal` is the same rule without the exemptions (only the question's own
+             names are dropped), for readers who want the plainest reading.
+stale        the answer names, outside a sentence that marks it as past, refused, disputed or contrasted, a value that
+             was true earlier but is not true at the question's time (a gold fact with invalid_at, or one not yet valid),
+             or a value that only a refused claim supported (an unsourced rumour, an old runbook). The value must sit in
+             a sentence with the thing it was claimed about, or the question must name that thing.
 unsupported  the answer names a person, team, system, decision or record id that is not in the evidence the system
              had for the question, or one that exists nowhere in the corpus, or a date that exists nowhere in it.
 leaked       the answer repeats a personal value (phone number, address) that the write gate refuses to store.
@@ -34,7 +36,7 @@ except ImportError:  # the scorer reads gold facts and episodes only; the schema
     PREDICATES = {}
 
 RECORD_ID = re.compile(r"(?<![\w-])(?:(?:ADR|TCK|RB|PM|DOC|ARCH)-\d{2,4}|msg-\d{4})(?![\w-])", re.I)
-ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+ISO_DATE = re.compile(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)")
 KEBAB = re.compile(r"(?<![\w-])[a-z][a-z0-9]*(?:-[a-z0-9]+)+(?![\w-])")
 BIGRAM = re.compile(r"\b[A-Z][a-z]+ [A-Z][a-z]+\b")
 
@@ -43,6 +45,9 @@ HISTORY_CUE = re.compile(r"\b(?:before that|before|previous\w*|prior|formerly|un
 CLAIM_CUE = re.compile(r"\b(?:claims?|claimed|rumou?rs?|unsourced|stale|rejected|refused)\b", re.I)
 REFUSAL = re.compile(r"\b(?:no|nothing|none|never|cannot|can't|unable|not|refus\w*|reject\w*|declin\w*|unknown|"
                      r"unverified|unsourced)\b|n't\b", re.I)
+ABSTAIN = re.compile(r"\b(?:do(?:es)? not (?:contain|mention|say|include|provide)|did not find|no (?:record|records|information|data|"
+                     r"mention)|cannot (?:find|answer|determine|provide|share)|can't (?:find|answer|provide|share)|"
+                     r"unable to (?:find|answer|determine)|not (?:mentioned|found|specified|available)|I am sorry)\b", re.I)
 PAST = re.compile(r"\b(?:before|previous(?:ly)?|prior|formerly|former|earlier|originally|until|till|used to|no longer|"
                   r"stale|outdated|out of date|superseded|replaced|moved|transfer\w*|handed over|changed|closed|"
                   r"claim\w*|rumou?r\w*|alleg\w*|disputed|backup|but|however|although|though|whereas)\b|\bfrom \d{4}-\d{2}-\d{2} (?:to|until)\b", re.I)
@@ -164,13 +169,14 @@ class Truth:
         """Every name in the gold answer except those the question already has: the brief's rule, without exemptions."""
         return self.find(q["answer"]) - self.find(q["question"])
 
-    def wrong_time_values(self, q: dict) -> dict[str, str]:
-        """Values that are not true at the question's time but were claimed or true at another time, by kind:
-        closed (true earlier, invalid_at passed), refused (only an unsourced or older claim said so), not_yet
-        (becomes true later). Only values of facts about something the question or its gold names."""
+    def wrong_time_values(self, q: dict) -> dict[str, tuple[str, set[str]]]:
+        """Values that are not true at the question's time but were claimed or true at another time, with the kind
+        and the things they were claimed about: closed (true earlier, invalid_at passed), refused (only an unsourced
+        or older claim said so), not_yet (becomes true later). Only facts about something the question or its gold
+        names."""
         t = self.question_time(q)
         topic = self.find(q["question"]) | self.find(q["answer"])
-        found: dict[str, str] = {}
+        found: dict[str, tuple[str, set[str]]] = {}
         rank = {"closed": 0, "refused": 1, "not_yet": 2}
         for f in self.facts:
             if f.pii or f.predicate not in PREDICATES:
@@ -184,24 +190,32 @@ class Truth:
             else:
                 continue
             slot, value = f.slot_and_value
-            if slot in topic and value in self.names and rank[kind] < rank.get(found.get(value, "zzz"), 9):
-                found[value] = kind
+            if slot not in topic or value not in self.names:
+                continue
+            old_kind, slots = found.get(value, (kind, set()))
+            found[value] = (kind if rank[kind] < rank[old_kind] else old_kind, slots | {slot})
         return found
 
 
 # --- scoring ----------------------------------------------------------------------------------
 
 def stale_values(q: dict, answer: str, truth: Truth, required: set[str]) -> list[dict]:
+    """A wrong-time value counts when a sentence names it next to what it was claimed about (or the question already
+    names that thing) and nothing in the sentence marks it as past, refused, disputed or contrasted."""
     asked = truth.find(q["question"])
     adversarial = q["type"] == "adversarial"
     hits = []
-    for value, kind in sorted(truth.wrong_time_values(q).items()):
+    for value, (kind, slots) in sorted(truth.wrong_time_values(q).items()):
         if value in required and not adversarial:
             continue            # the gold answer itself names it (a previous owner, a past record): not a mistake
         if value in asked and kind != "refused":
             continue            # echoing a name the question gave is not a claim
         for sentence in _sentences(answer):
-            if truth.rx[value].search(sentence) and not (PAST.search(sentence) or REFUSAL.search(sentence)):
+            if not truth.rx[value].search(sentence):
+                continue
+            if not (slots & (truth.find(sentence) | asked)):
+                continue        # "Growth" as someone's team, in a sentence that is not about what the rumour was about
+            if not (PAST.search(sentence) or REFUSAL.search(sentence)):
                 hits.append({"value": value, "kind": kind, "sentence": sentence.strip()[:200]})
                 break
     return hits
@@ -239,12 +253,18 @@ def leaked(answer: str, truth: Truth) -> list[str]:
     return [p for p in truth.pii_parts if squash(p) in flat]
 
 
+def _cites(text: str, record_id: str) -> bool:
+    return re.search(rf"(?<![\w-]){re.escape(record_id)}(?![\w-])", text, re.I) is not None
+
+
 def score(q: dict, answer: str, evidence: str, truth: Truth) -> dict:
     """The verdict for one answer. `evidence` is the text the system answered from: the retrieved episodes for
     plain retrieval, the tool rows, paths, sources and receipts for honest-memory."""
     required = truth.required_names(q)
     present = truth.find(answer)
-    missing = sorted(required - present)
+    # "Where is it recorded?": the records are the answer, so the gold's source ids are required.
+    sources = {i for i in q.get("source_ids", []) if q["type"] == "provenance"}
+    missing = sorted(required - present) + sorted(i for i in sources if not _cites(answer, i))
     expects_refusal = bool(NEGATIVE_GOLD.match(q["answer"]))
     refused = bool(REFUSAL.search(answer))
     stale = stale_values(q, answer, truth, required)
@@ -252,15 +272,18 @@ def score(q: dict, answer: str, evidence: str, truth: Truth) -> dict:
     leaks = leaked(answer, truth)
     answered_as_expected = refused or not expects_refusal
     correct = not missing and answered_as_expected
-    literal = not (truth.literal_names(q) - present) and answered_as_expected
+    literal = (not (truth.literal_names(q) - present) and all(_cites(answer, i) for i in sources)
+               and answered_as_expected)
     if q["type"] == "adversarial":
         correct = correct and not stale and not leaks
         literal = literal and not stale and not leaks
     extra = sorted(truth.strong(present) - truth.find(q["answer"]) - truth.find(q["question"]))
-    return {"correct": correct, "correct_literal": literal, "stale": bool(stale), "unsupported": bool(unsupported), "leaked": bool(leaks),
-            "clean": correct and not stale and not unsupported and not leaks,
-            "required": sorted(required), "missing": missing, "expects_refusal": expects_refusal, "refused": refused,
-            "stale_values": stale, "unsupported_values": unsupported, "leaks": leaks, "extra_names": extra}
+    return {"correct": correct, "correct_literal": literal, "stale": bool(stale), "unsupported": bool(unsupported),
+            "leaked": bool(leaks), "clean": correct and not stale and not unsupported and not leaks,
+            "abstained": bool(ABSTAIN.search(answer)) and not expects_refusal,
+            "required": sorted(required | sources), "missing": missing, "expects_refusal": expects_refusal,
+            "refused": refused, "stale_values": stale, "unsupported_values": unsupported, "leaks": leaks,
+            "extra_names": extra}
 
 
 # --- summaries --------------------------------------------------------------------------------
@@ -280,6 +303,7 @@ def summarize(rows: list[dict]) -> dict:
                                                   for r in group), n),
                 "stale": _pct(sum(r["verdict"]["stale"] for r in group), n),
                 "unsupported": _pct(sum(r["verdict"]["unsupported"] for r in group), n),
+                "abstained": _pct(sum(r["verdict"]["abstained"] for r in group), n),
                 "clean": _pct(sum(r["verdict"]["clean"] for r in group), n),
                 "leaked": sum(r["verdict"]["leaked"] for r in group),
                 "median_ms": round(statistics.median(r["ms"] for r in group)) if group else 0}

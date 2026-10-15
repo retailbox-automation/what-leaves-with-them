@@ -141,7 +141,32 @@ def test_unsupported_names(truth, questions):
 
 
 def test_every_gold_answer_scores_correct_against_itself(truth, corpus):
-    """The scorer accepts the corpus's own gold answers (a floor check: the gold must not fail its own rules)."""
+    """The scorer accepts the corpus's own gold answers, with their source ids (a floor check: the gold must not fail
+    its own rules)."""
     failed = [q["id"] for q in corpus.questions
-              if not score(q, q["answer"], q["answer"] + " " + q["question"], truth)["correct"]]
+              if not score(q, q["answer"] + " Sources: " + ", ".join(q["source_ids"]),
+                           q["answer"] + " " + q["question"] + " " + " ".join(q["source_ids"]), truth)["correct"]]
     assert failed == []
+
+
+def test_provenance_needs_the_source_records(truth, questions):
+    assert not verdict(truth, questions, "Q034", "Sana Petrov, in RB-05.")["correct"]
+    assert verdict(truth, questions, "Q034", "Sana Petrov, in DOC-01 and RB-05.")["correct"]
+    assert not verdict(truth, questions, "Q037", "The records do not say who owns notifications.")["correct"]
+
+
+def test_team_name_in_an_unrelated_sentence_is_not_a_rumour(truth, questions):
+    answer = ("billing-api, reporting, admin-console, invoice-renderer and webhooks. For reporting, call Aiko Rademacher "
+              "(Growth); the Growth lead is Omar Fenwick.")
+    assert not verdict(truth, questions, "Q065", answer)["stale"]
+    assert verdict(truth, questions, "Q065", "billing-api now belongs to Growth.")["stale"]
+
+
+def test_abstaining_is_not_stale_or_unsupported(truth, questions):
+    v = verdict(truth, questions, "Q003", "The records do not contain information regarding who owns ledger-db.")
+    assert v["abstained"] and not v["correct"] and not v["stale"] and not v["unsupported"]
+
+
+def test_dates_in_episode_timestamps_exist(truth, questions):
+    q = questions["Q017"]
+    assert not score(q, "Sana Petrov: refused on 2026-10-01.", "Sana Petrov", truth)["unsupported"]
