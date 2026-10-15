@@ -193,7 +193,7 @@ def create_app(db=None, *, rate_limit: int | None = None, web_dir: str | Path | 
         tool = T.TOOLS.get(name)
         if tool is None:
             raise HTTPException(404, f"unknown tool {name!r}; tools: {', '.join(T.TOOLS)}")
-        if tool.writes:
+        if tool.writes_with(args):  # handoff_plan writes only with propose=true
             require_write(request)
         store = store_for(tenant)
         agent, session = identity(request)

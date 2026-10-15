@@ -20,13 +20,15 @@ ACCEPTED = "accepted"
 CONFIRMED = "confirmed"
 SUPERSEDED = "superseded"
 REFUSED = "refused"
+CLOSED = "closed"
 
 READ_OUTCOMES = (ANSWERED_WITH_PATH, ANSWERED_FROM_MEMORY, NOT_IN_GRAPH, UNKNOWN_ENTITY)
-WRITE_OUTCOMES = (ACCEPTED, CONFIRMED, SUPERSEDED, REFUSED)
+WRITE_OUTCOMES = (ACCEPTED, CONFIRMED, SUPERSEDED, REFUSED, CLOSED)
 OUTCOMES = READ_OUTCOMES + WRITE_OUTCOMES
 
 # What the write gate calls its decisions, mapped to the outcome an agent sees.
-GATE_OUTCOMES = {"ACCEPT": ACCEPTED, "CONFIRM": CONFIRMED, "SUPERSEDE": SUPERSEDED, "REJECT": REFUSED}
+GATE_OUTCOMES = {"ACCEPT": ACCEPTED, "CONFIRM": CONFIRMED, "SUPERSEDE": SUPERSEDED, "REJECT": REFUSED,
+                 "CLOSE": CLOSED}
 
 
 @dataclass
@@ -276,7 +278,8 @@ def _recall(a: Answer) -> str:
 _VERBS = {"OWNS": ("owns", "is owned by"), "MEMBER_OF": ("is a member of", "has member"),
           "LEADS": ("leads", "is led by"), "WORKED_ON": ("worked on", "was worked on by"),
           "DECIDED": ("decided", "was decided by"), "SUPERSEDES": ("supersedes", "is superseded by"),
-          "DEPENDS_ON": ("depends on", "is a dependency of")}
+          "DEPENDS_ON": ("depends on", "is a dependency of"),
+          "CONSTRAINS": ("constrains", "is constrained by")}
 
 
 def _facts_about(a: Answer) -> str:
@@ -297,11 +300,98 @@ def _write(a: Answer) -> str:
     return f"The {what} was {a.outcome} (receipt {rid})."
 
 
+_ROLE = {"OWNS": "owner", "LEADS": "lead", "MEMBER_OF": "member"}
+
+
+def _held(r: dict) -> str:
+    role = _ROLE[r["relation"]]
+    return f"{r['item']} ({role}, ended {day(r['until'])})" if r["state"] == "ended" else f"{r['item']} ({role})"
+
+
+def _what_leaves(a: Answer) -> str:
+    s = a.rows[0]
+    held = [r for r in a.rows if r.get("kind") == "held"]
+    risk = [r for r in a.rows if r.get("kind") == "at_risk"]
+    when = f" as of {s['as_of']}" if s.get("as_of") else ""
+    text = f"At depth 1{when}, {s['person']}: " + (", ".join(_held(r) for r in held) or "nothing held")
+    if s["depth"] > 1:
+        parts = [f"{r['item']} ({r['hops']} hops via {r['decision'] or r['via']}"
+                 f"{', only their records' if r.get('only_theirs') else ''}, owner "
+                 f"{r['owner'] + (', ' + r['owner_team'] if r['owner_team'] else '') if r['owner'] else 'none'})"
+                 for r in risk[:8]]
+        more = f" and {len(risk) - 8} more" if len(risk) > 8 else ""
+        text += (f". Within {s['depth']} hops, {len(risk)} more at risk: " + "; ".join(parts) + more if risk
+                 else f". Within {s['depth']} hops, no decision of theirs governs a system someone else owns")
+    return text + "."
+
+
+def _single_source(a: Answer) -> str:
+    s = a.rows[0]
+    items = a.rows[1:]
+    single = [r for r in items if r["single_source"]]
+    shared = [r for r in items if not r["single_source"] and r["item_kind"] == "decision"]
+    when = f" as of {s['as_of']}" if s.get("as_of") else ""
+    text = (f"{len(single)} item{'s' if len(single) != 1 else ''} rest only on records written by {s['person']}{when}: "
+            + "; ".join(f"{r['item']} ({', '.join(r['episodes'][:3])}{', ...' if len(r['episodes']) > 3 else ''})"
+                        for r in single))
+    if shared:
+        text += ". Checked, with records by others: " + "; ".join(f"{r['item']} ({', '.join(r['authors'])})" for r in shared)
+    return text + "."
+
+
+def _without(a: Answer) -> str:
+    s = a.rows[0]
+    parts = [f"{' and '.join(i['items'])} (through {', '.join(sorted({c['relation'] for c in i['connected_through']}))})"
+             for i in a.rows[1:]]
+    return (f"Without {s['person']}, nobody in the graph is connected to: " + "; ".join(parts)
+            + f". Connected components on a temporary copy, {s['wall_ms']} ms.")
+
+
+def _bridges(a: Answer) -> str:
+    top = [r for r in a.rows if r.get("kind") == "bridge"]
+    only = [r for r in a.rows if r.get("kind") == "only_link"]
+    text = "Top bridges: " + "; ".join(f"{r['person']} (score {r['score']}, links {', '.join(r['teams'])})" for r in top)
+    if only:
+        text += ". Linked by one person only: " + "; ".join(f"{r['teams'][0]} and {r['teams'][1]} by {r['person']}"
+                                                            for r in only[:4])
+    return text + ("." if a.rows[0].get("exact") else ". Scores are estimates on this engine.")
+
+
+def _successors(a: Answer) -> str:
+    parts = []
+    for r in a.rows:
+        if not r["candidates"]:
+            parts.append(f"{r['item']}: {r['note']}")
+            continue
+        names = [f"{c['person']} ({c['on_item']} on it)" if c["on_item"] else
+                 f"{c['person']} ({c['nearby']} on {', '.join(c['via'])})" for c in r["candidates"]]
+        parts.append(f"{r['item']}: " + ", ".join(names))
+    return "Candidates, not decisions. " + "; ".join(parts) + "."
+
+
+def _handoff_plan(a: Answer) -> str:
+    s = a.rows[0]
+    lines = [f"{r['item']}: {r['action']}" for r in a.rows[1:] if r.get("kind") == "line"]
+    asks = [f"({r['n']}) {r['question']}" for r in a.rows[1:] if r.get("kind") == "question"]
+    when = f" before {s['last_day']}" if s.get("last_day") else ""
+    done = f" {s['proposed']} written as proposed handoffs." if s.get("proposed") else ""
+    text = f"{s['lines']} handoff line{'s' if s['lines'] != 1 else ''} for {s['person']}{when}. " + " ".join(lines) + done
+    return text + (f" Questions to ask {s['person']}: " + " ".join(asks) if asks else "")
+
+
+def _promises(a: Answer) -> str:
+    found = [r for r in a.rows if r.get("kind") == "promise"]
+    return (f"{len(found)} written promise{'s' if len(found) != 1 else ''}: "
+            + "; ".join(f"{r['episode']} ({day(r['at'])}, {r['channel']}): \"{r['line']}\"" for r in found) + ".")
+
+
 TEMPLATES = {"current_owner": _current_owner, "owner_at": _owner_at, "history": _history,
              "escalation_path": _escalation, "impact": _impact, "who_knows": _who_knows,
              "decision_trail": _decision_trail, "why": _why, "what_changed": _what_changed,
              "path_between": _path_between, "recall": _recall, "facts_about": _facts_about,
-             "remember": _write, "handoff": _write}
+             "remember": _write, "handoff": _write,
+             "what_leaves": _what_leaves, "single_source": _single_source, "without": _without, "bridges": _bridges,
+             "successors": _successors, "handoff_plan": _handoff_plan, "promises": _promises}
 
 
 def template_sentence(answer: Answer) -> str:

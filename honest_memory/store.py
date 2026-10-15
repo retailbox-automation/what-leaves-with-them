@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -60,6 +62,17 @@ class TraceRow:
 
 
 @dataclass
+class Scratch:
+    """A temporary graph opened by Store.scratch; its queries land in the owning store's trace."""
+    store: "Store"
+    graph: object
+    name: str
+
+    def query(self, query: str, params: dict | None = None) -> list[list]:
+        return self.store._run(self.graph.query, query, params)
+
+
+@dataclass
 class Store:
     db: FalkorDB
     tenant: str
@@ -79,6 +92,22 @@ class Store:
         rows = fn(query, params or {}).result_set
         self.trace.append(TraceRow(query, params or {}, round((time.perf_counter() - t0) * 1000, 2), len(rows)))
         return rows
+
+    @contextmanager
+    def scratch(self, purpose: str):
+        """A temporary graph next to the tenant's own, hm_<tenant>__<purpose>_<random>, for projections that an
+        algorithm needs (written edges both ways, or with one person left out). Always deleted on exit, also when
+        a query inside fails; its queries are traced like the tenant's."""
+        name = f"{graph_name(self.tenant)}__{purpose}_{uuid.uuid4().hex[:10]}"
+        graph = self.db.select_graph(name)
+        try:
+            yield Scratch(self, graph, name)
+        finally:
+            try:
+                graph.delete()
+            except Exception as exc:  # nothing was ever written to it
+                if "empty key" not in str(exc).lower() and "invalid graph" not in str(exc).lower():
+                    raise
 
     def ensure_schema(self) -> None:
         existing = {(r[0], key) for r in self.rw("CALL db.indexes() YIELD label, properties RETURN label, properties")

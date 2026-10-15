@@ -51,7 +51,7 @@ class GateUnavailable(RuntimeError):
 @dataclass(frozen=True)
 class Arg:
     name: str
-    kind: str                       # entity | entities | date | int | text | enum | ids
+    kind: str                       # entity | entities | date | int | text | enum | ids | bool
     description: str
     required: bool = True
     labels: tuple[str, ...] = ()    # entity kinds: the labels a name may resolve to
@@ -77,6 +77,8 @@ class Arg:
             s = {"type": "integer", "minimum": self.low, "maximum": self.high, "description": self.description}
         elif self.kind == "enum":
             s = {"type": "string", "enum": list(self.choices), "description": self.description}
+        elif self.kind == "bool":
+            s = {"type": "boolean", "description": self.description}
         elif self.kind == "ids":
             s = {"type": "array", "maxItems": self.high, "items": {"type": "string", "minLength": 1, "maxLength": 64},
                  "description": self.description}
@@ -112,6 +114,11 @@ class Tool:
     args: tuple[Arg, ...]
     fn: Callable[[Store, dict, Context], Answer]
     writes: bool = False
+    write_flag: str | None = None   # a boolean argument that turns this read tool into a write (handoff_plan.propose)
+
+    def writes_with(self, args: dict | None) -> bool:
+        """Whether a call with these arguments writes: always for a write tool, else when its write flag is set."""
+        return self.writes or bool(self.write_flag and (args or {}).get(self.write_flag) in (True, "true", "True", 1))
 
     def parameters(self) -> dict:
         return {"type": "object", "additionalProperties": False,
@@ -282,8 +289,7 @@ def current_owner(store: Store, a: dict, ctx: Context) -> Answer:
         "ORDER BY e.id, g.ts", {"system": system, "ok": list(GATE_OK)})
     args = {"system": system}
     if not rows:
-        return _not_in_graph("current_owner", args, f"{system} exists, but the graph records no current owner "
-                             "for it. That may mean ownership is not modelled, not that nobody owns it.")
+        return _no_current_owner(store, system, args)
     owner, team, since, source_ids, gate_id = rows[0][:5]
     prev = store.ro(
         "MATCH (q:Person)-[h:WAS]->(s:System {name: $system}) WHERE h.predicate = 'OWNS' "
@@ -300,6 +306,33 @@ def current_owner(store: Store, a: dict, ctx: Context) -> Answer:
     receipts = _receipts(store, [gate_id] + [r[5][1] for r in prov])
     return _finish(Answer(A.ANSWERED_WITH_PATH, "current_owner", args, [row], paths,
                           _sources(store, row["source_ids"]), receipts))
+
+
+# The most recent closed ownership of a system and the receipt that closed it (a SUPERSEDE or a CLOSE).
+_LAST_OWNER = (
+    "MATCH (q:Person)-[h:WAS]->(s:System {name: $system}) WHERE h.predicate = 'OWNS' "
+    "OPTIONAL MATCH (g:GateDecision {id: h.closed_by}) "
+    "RETURN q.name, h.valid_at, h.invalid_at, h.source_ids, h.closed_by, g.outcome "
+    "ORDER BY h.invalid_at DESC LIMIT 1")
+
+
+def _no_current_owner(store: Store, system: str, args: dict) -> Answer:
+    """No current OWNS edge. If history holds one, say who owned it last, until when, and which receipt ended it,
+    instead of guessing a successor."""
+    last = store.ro(_LAST_OWNER, {"system": system})
+    if not last:
+        return _not_in_graph("current_owner", args, f"{system} exists, but the graph records no current owner "
+                             "for it. That may mean ownership is not modelled, not that nobody owns it.")
+    who, since, until, source_ids, closed_by, outcome = last[0]
+    receipts = _receipts(store, [closed_by])
+    ended_by = receipts[0].cites if receipts else []
+    how = (f"closed by {closed_by}" + (f", citing {', '.join(ended_by)}" if ended_by else "")) if closed_by else "closed"
+    note = (f"{system} has no current owner. Last owner: {who} until {iso_ts(until)[:10]} ({how}). "
+            "Nobody has been recorded as taking it over.")
+    row = {"owner": None, "system": system, "last_owner": who, "last_since": iso_ts(since), "last_until": iso_ts(until),
+           "closed_by": closed_by, "closed_outcome": outcome, "ended_by": ended_by, "source_ids": source_ids or []}
+    return _finish(Answer(A.NOT_IN_GRAPH, "current_owner", args, [row], [[who, "WAS", system]],
+                          _sources(store, list(source_ids or []) + ended_by), receipts, note=note))
 
 
 _OWNERS_AT = (
@@ -578,6 +611,7 @@ def what_changed(store: Store, a: dict, ctx: Context) -> Answer:
         rows.append({"change": "learned", "predicate": ty, "subject": s, "object": o, "at": iso_ts(at),
                      "source_ids": src or [], "gate_id": gate})
         paths.append([s, ty, o])
+    closers = []
     for s, ty, o, at, src, gate in store.ro(
             "MATCH (s)-[h:WAS]->(o) WHERE h.invalid_at > $t AND ($pred IS NULL OR h.predicate = $pred) "
             "RETURN coalesce(s.name, s.id), h.predicate, coalesce(o.name, o.id), h.invalid_at, h.source_ids, "
@@ -585,6 +619,12 @@ def what_changed(store: Store, a: dict, ctx: Context) -> Answer:
         rows.append({"change": "closed", "predicate": ty, "subject": s, "object": o, "at": iso_ts(at),
                      "source_ids": src or [], "gate_id": gate})
         paths.append([s, "WAS", o])
+        closers.append(gate)
+    closing = {r.id: r for r in _receipts(store, closers)}
+    for r in rows:
+        if r["change"] == "closed" and r["gate_id"] in closing:  # why it was closed: the receipt and its sources
+            r["closed_by"] = closing[r["gate_id"]].outcome
+            r["source_ids"] = list(dict.fromkeys(r["source_ids"] + closing[r["gate_id"]].cites))
     refused = [_receipt(r) for r in store.ro(
         "MATCH (g:GateDecision) WHERE g.outcome = 'REJECT' AND g.ts > $t AND ($pred IS NULL OR g.predicate = $pred) "
         "OPTIONAL MATCH (g)-[:CITES]->(e:Episode) RETURN " + _RECEIPT_COLUMNS + " ORDER BY g.ts LIMIT $limit", params)]
@@ -604,7 +644,9 @@ def what_changed(store: Store, a: dict, ctx: Context) -> Answer:
         return _finish(ans)
     rows += refused_rows
     ids = [i for r in rows for i in r["source_ids"] + [r.get("claimed_in")]]
-    return _finish(Answer(A.ANSWERED_WITH_PATH, "what_changed", args, rows, paths, _sources(store, ids), refused))
+    closed_receipts = [closing[g] for g in dict.fromkeys(closers) if g in closing]
+    return _finish(Answer(A.ANSWERED_WITH_PATH, "what_changed", args, rows, paths, _sources(store, ids),
+                          refused + closed_receipts))
 
 
 def path_between(store: Store, a: dict, ctx: Context) -> Answer:
@@ -819,6 +861,12 @@ TOOLS: dict[str, Tool] = {t.name: t for t in (
 )}
 
 
+# N5, the departure tools (what_leaves, single_source, without, bridges, successors, handoff_plan, promises),
+# live in departure.py, which adds them to TOOLS when it loads. Imported here, after everything it uses from this
+# module exists, so importing either module first gives the same catalogue.
+from . import departure as _departure  # noqa: E402,F401
+
+
 def tool_schemas() -> list[dict]:
     """JSON description of every tool, for MCP and the HTTP API."""
     return [t.schema() for t in TOOLS.values()]
@@ -833,6 +881,12 @@ def openai_tools(include_writes: bool = True) -> list[dict]:
 
 def _coerce(arg: Arg, value: Any) -> Any:
     k = arg.kind
+    if k == "bool":
+        if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+            return value.strip().lower() == "true"
+        if not isinstance(value, bool):
+            raise ArgError(f"{arg.name} must be true or false")
+        return value
     if k == "int":
         if isinstance(value, str) and re.fullmatch(r"-?\d+", value.strip()):
             value = int(value)

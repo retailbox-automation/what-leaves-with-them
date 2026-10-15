@@ -317,3 +317,71 @@ RETRO_GOOD = ["Faster reviews", "Clear incident updates", "Less weekend work", "
 RETRO_BAD = ["Too many meetings", "Unclear priorities", "Slow staging environment", "Flaky tests"]
 
 STREETS = ["Marlowe Court", "Larkspur Avenue", "Quillon Street", "Harrow Lane", "Fenmore Road"]
+
+# ---- the departure scene (generator 0.3.0) ------------------------------------------------------------
+# One engineer resigns. What leaves with them is built so that a join answers only part of it: two systems
+# nobody else touches, two decisions only they wrote, one decision they share, and work that links two teams
+# that otherwise never meet. Everything is fictional, including the customer.
+
+CUSTOMER = "Fernhill Outfitters"
+
+# name -> kind, purpose, what it needs (DEPENDS_ON, or None), the document kind that declares it, work components
+SCENE_SYSTEMS = {
+    "fernhill-sso": {
+        "kind": "integration", "kind_text": "customer integration",
+        "purpose": f"single sign-on for the customer {CUSTOMER}", "depends_on": "auth", "channel": "#platform",
+        "components": ["SAML assertion mapping", "certificate rollover", "user provisioning", "login redirect"],
+    },
+    "oncall-runbook": {
+        "kind": "runbook", "kind_text": "on-call runbook",
+        "purpose": "the on-call runbook: paging, triage and incident handover", "depends_on": None, "channel": "#platform",
+        "components": ["paging policy", "severity table", "escalation steps", "handover checklist"],
+    },
+}
+
+INTEGRATION_BODY = (f"{CUSTOMER} signs in through their own identity provider; fernhill-sso maps their users to "
+                    f"{COMPANY} accounts.\nThe certificate rollover steps for this integration are written down here "
+                    "and nowhere else.")
+RUNBOOK_BODY = ("Paging: page the on-call engineer through the paging tool; a second page after 10 minutes goes to "
+                "the team lead.\nTriage: pick the severity from the severity table, then open an incident channel.\n"
+                "Handover: the outgoing on-call writes a handover note before the shift ends.")
+
+# (number, title, draft week, accepted week, system it constrains, context, decision, consequences, shared)
+# shared=False: the leaver is the only author. shared=True: the owner of the constrained system writes it and the
+# leaver co-authors it (the control: a decision with a second author is not single-source).
+SCENE_ADRS = [
+    (14, "Encrypt ledger-db backups with rotating keys", 2, 3, "ledger-db",
+     "A backup copy of ledger-db could be read by anyone with access to the storage bucket.",
+     "Every ledger-db backup is encrypted with a key that rotates every 90 days; a restore needs the current key "
+     "from the security on-call.",
+     "Restores take a few minutes longer. Losing the key history makes old backups unreadable.", False),
+    (16, "Rotate auth signing keys every 30 days", 3, 4, "auth",
+     "Signing keys for auth had not been rotated since launch.",
+     "auth rotates its token signing keys every 30 days; the security on-call runs the rotation.",
+     "Clients must fetch keys from the published key set.", True),
+    (15, "Mask customer names in reporting exports", 4, 5, "reporting",
+     "CSV exports from reporting carried customer names to people who only needed totals.",
+     "reporting masks customer names in every CSV export unless the requester holds the export role.",
+     "Analysts ask for the export role when they need names.", False),
+]
+
+# Work the leaver does on systems outside their own team, plus the two systems only they touch.
+SCENE_WORK = (("fernhill-sso", 4), ("oncall-runbook", 3), ("reporting", 2), ("admin-console", 2))
+SCENE_WORK_TICKETS = 7
+
+HANDOVER_NOTE = "Writing handover notes for fernhill-sso and oncall-runbook this week."
+
+# The handoff session between the resignation and the last day: the leaver answers some of the handoff questions in
+# writing, the named successor confirms what they now hold. Each line repeats a fact the graph already has, so the gate
+# CONFIRMs it with one more source; the on-call runbook and any unwritten customer promise stay unanswered on purpose.
+HANDOFF_ANSWERS = {
+    "ledger-db": "the backup key rotates every 90 days and lives with the security on-call; restoring an older backup "
+                 "needs the key that was current when it was taken",
+    "reporting": "masking runs in the CSV export step, and the Growth lead grants the export role",
+    "fernhill-sso": "the SAML certificate for the customer rolls over once a year, two weeks before it expires, "
+                    "following the steps in {decl}",
+}
+HANDOFF_CONFIRMS = {
+    "ledger-db": "confirmed; I hold the key rotation schedule from now on",
+    "reporting": "confirmed; I review export role requests from now on",
+}
