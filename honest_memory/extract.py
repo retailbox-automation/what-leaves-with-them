@@ -70,6 +70,7 @@ class RuleExtractor:
     def __init__(self) -> None:
         self.known = NameIndex()
         self.team_of: dict[str, str] = {}
+        self.hydrated = False  # set by ingest once `known` has been filled from a graph that already holds entities
         self._seen: dict[str, dict] = {}
         self._work_chat = [_from_template(t) for t in T.CHAT_WORK]
 
@@ -143,7 +144,7 @@ class RuleExtractor:
             for m in ROSTER_LINE.finditer(text):
                 out.append(self._standing(ep, m["p"], "MEMBER_OF", m["t"], {"role": m["role"]}))
                 if m["role"] == f"{m['t']} Lead":
-                    out.append(self._standing(ep, m["p"], "LEADS", m["t"]))
+                    out.append(self._standing(ep, m["p"], "LEADS", m["t"], {"role": m["role"]}))
         elif kind == "charter" and (lead := CHARTER_LEAD.search(text)):
             out.append(self._standing(ep, lead["p"], "LEADS", ep["title"].split(": ", 1)[1]))
         elif kind == "runbook" and (owner := OWNER_LINE.search(text)):
