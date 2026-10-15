@@ -144,6 +144,14 @@ def test_malformed_valid_at_is_refused(store):
     assert (res.outcome, res.reasons) == ("REJECT", ["bad_time"])
 
 
+def test_a_name_over_200_characters_is_refused_and_not_kept_in_the_receipt(store):
+    for kw in ({"subject": "A" * 10000}, {"object": "webhooks " * 1112}):
+        res = submit_fact(store, cand(**kw))
+        assert (res.outcome, res.reasons, res.written) == ("REJECT", ["bad_name"], False)
+    longest = max(len(str(v)) for (props,) in store.ro("MATCH (g:GateDecision) RETURN properties(g)") for v in props.values())
+    assert longest <= 200 and submit_fact(store, cand(subject="Ana")).outcome == "ACCEPT"
+
+
 # ---- check 2: personal data in subject or object --------------------------------------------------
 @pytest.mark.parametrize("value", ["+1-555-0159", "(360) 931-4245", "555 0159", "360.931.4245", "ana@example.com",
                                    "984 Marlowe Court", "12 Main Street, Springfield", "P.O. Box 77",
@@ -461,6 +469,14 @@ def test_personal_data_in_the_session_label_or_agent_name_is_refused(store):
     assert "555.015.9999" not in dump and "555-015-9999" not in dump and count(store, "MATCH (a:Agent) RETURN count(a)") == 0
 
 
+def test_finding_needs_a_well_formed_agent_name(store):
+    for agent in ("agent:x'}) DETACH DELETE n //", "ops", "agent:", "agent:" + "a" * 5000, "agent:Ops", "agent:ops\n"):
+        res = finding(store, agent=agent)
+        assert (res.outcome, res.reasons) == ("REJECT", ["bad_agent"])
+    assert count(store, "MATCH (a:Agent) RETURN count(a)") == 0 and count(store, "MATCH (f:Finding) RETURN count(f)") == 0
+    assert max(len(str(v)) for (props,) in store.ro("MATCH (g:GateDecision) RETURN properties(g)") for v in props.values()) <= 200
+
+
 def test_finding_time_must_parse(store):
     assert finding(store, at="not a time").reasons == ["bad_time"]
 
@@ -506,6 +522,15 @@ def test_personal_data_in_a_party_name_is_refused(store):
     assert (res.outcome, res.reasons) == ("REJECT", ["pii"])
     assert "555-015-9999" not in json.dumps(store.ro("MATCH (n) RETURN properties(n)"))
     assert count(store, "MATCH (a:Agent) RETURN count(a)") == 0
+
+
+def test_a_handoff_never_creates_an_agent_with_a_malformed_name(store):
+    for name in ("ghost", "agent:", "agent:Ghost'}) DETACH DELETE n //", "agent:" + "a" * 5000, "Agent:ghost", "agent:ghost\n"):
+        for kw in ({"to": name}, {"from_": name}):
+            res = handoff(store, **kw)
+            assert (res.outcome, res.reasons) == ("REJECT", ["unknown_entity"])
+    assert count(store, "MATCH (a:Agent) RETURN count(a)") == 0 and count(store, "MATCH (h:Handoff) RETURN count(h)") == 0
+    assert handoff(store, to="agent:ghost-2").outcome == "ACCEPT"  # a well-formed id is still created on first use
 
 
 def test_agent_names_are_created_only_with_the_agent_prefix(store):

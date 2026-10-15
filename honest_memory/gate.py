@@ -37,6 +37,8 @@ COUNTED = {"WORKED_ON"}
 REDACTED = "[redacted]"
 REDACTED_PII = "[redacted:pii]"
 SNIPPET = 200
+MAX_NAME = 200  # longest subject or object the gate will look at; receipts keep at most SNIPPET characters of a name
+AGENT_ID = re.compile(r"agent:[a-z0-9][a-z0-9_-]{0,63}")  # the shape the API and the tools accept
 
 
 @dataclass
@@ -197,6 +199,8 @@ def _judge(store: Store, cand: Candidate, episodes: dict, names: _Names) -> _Ver
     valid = _stamp(cand.valid_at)
     if valid is None:
         return refuse("bad_time")
+    if len(cand.subject) > MAX_NAME or len(cand.object) > MAX_NAME:
+        return refuse("bad_name")
     # 2
     if _pii_in(cand):
         return refuse("pii")
@@ -253,7 +257,7 @@ def submit_fact(store: Store, cand: Candidate, at: str | None = None) -> GateRes
     valid = _stamp(cand.valid_at)
     seq = store.next_sequence("gate")
     forbidden = cand.predicate in FORBIDDEN_PREDICATES
-    subject, obj = _redact(cand.subject), REDACTED if forbidden else _redact(cand.object)
+    subject, obj = _redact(cand.subject)[:SNIPPET], REDACTED if forbidden else _redact(cand.object)[:SNIPPET]
     receipt_id = _receipt_id(seq, subject, cand.predicate, obj, cand.valid_at, ids, cand.proposer, cand.claim_episode)
 
     written, closed = False, []
@@ -330,7 +334,7 @@ def _refuse_record(store: Store, *, reasons: list[str], agent: str, predicate: s
     receipt_id = _receipt_id(seq, agent, predicate, obj, at, source_ids)
     _write_receipt(store, receipt_id,
                    {"id": receipt_id, "ts": at, "outcome": REJECT, "reasons": reasons, "predicate": predicate,
-                    "subject": _redact(agent), "object": obj, "proposer": _redact(agent), "valid_at": at,
+                    "subject": _redact(agent)[:SNIPPET], "object": obj, "proposer": _redact(agent)[:SNIPPET], "valid_at": at,
                     "source_ids": source_ids},
                    found, about)
     return GateResult(REJECT, reasons, receipt_id, False)
@@ -377,6 +381,8 @@ def submit_finding(store: Store, agent: str, session: str, text: str, about: lis
     names = _Names(store)
     resolved = [(names.label(n, ENTITY_KEYS), n) for n in about]
     known = [(l, n) for l, n in resolved if l]
+    if not reasons and not AGENT_ID.fullmatch(agent):
+        reasons = ["bad_agent"]
     if not reasons:
         reasons = ["no_about"] if not about else ["unknown_entity"] if len(known) < len(about) else []
     snippet = (REDACTED_PII if "pii" in reasons else text)[:SNIPPET]
@@ -406,7 +412,7 @@ def submit_handoff(store: Store, from_: str, to: str, topic: str, note: str, sou
     names = _Names(store)
 
     def party(name: str, order) -> tuple[str, str] | None:
-        label = "Agent" if name.startswith("agent:") else names.label(name, order)
+        label = "Agent" if AGENT_ID.fullmatch(name) else names.label(name, order)
         return (label, name) if label else None
 
     src, dst = party(from_, ("Agent", "Team", "Person")), party(to, ("Agent", "Person", "Team"))
