@@ -159,6 +159,30 @@ ADRS = [
      "Migrations are planned around the close."),
 ]
 
+# (system, system it needs to work): the week-1 architecture overview. The longest
+# upstream chain is four hops: status-page -> notifications -> invoice-renderer
+# -> billing-api -> ledger-db (or auth).
+DEPENDENCIES = [
+    ("notifications", "invoice-renderer"),
+    ("invoice-renderer", "billing-api"),
+    ("billing-api", "ledger-db"),
+    ("webhooks", "billing-api"),
+    ("admin-console", "billing-api"),
+    ("billing-api", "auth"),
+    ("reporting", "ledger-db"),
+    ("status-page", "notifications"),
+]
+
+# A decision in week 5 that adds a dependency missing from the overview: reporting -> billing-api.
+# (number, title, draft week, accepted week, author team, context, decision, consequences)
+DEPENDENCY_ADR = (
+    13, "Revenue rollups read invoice state through billing-api", 4, 5, "Growth",
+    "Revenue rollups need invoice states, and totals built from ledger entries alone differed from the invoice list.",
+    "reporting depends on billing-api: the revenue rollup calls the invoice list endpoint of billing-api "
+    "in addition to reading ledger-db.",
+    "billing-api rate limits apply to reporting jobs. Reporting must handle API errors.",
+)
+
 # (week, system, title, impact, root cause, actions, author team or None = system owner)
 POSTMORTEMS = [
     (2, "webhooks", "Delayed webhook deliveries",

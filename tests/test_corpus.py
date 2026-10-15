@@ -78,7 +78,7 @@ def test_counts_within_ten_percent(eps, questions):
     for kind, target in TARGETS.items():
         assert within(kinds[kind], target), (kind, kinds[kind])
     assert within(len(eps), 400)
-    assert within(len(questions), 60)
+    assert within(len(questions), 66)  # 60 original + 6 impact questions
 
 
 def test_episode_schema(eps):
@@ -215,3 +215,99 @@ def test_s8_supersedes(gold, by_id):
 def test_questions_cover_every_scenario(questions):
     seen = {q["scenario"] for q in questions}
     assert {f"S{i}" for i in range(1, 9)} <= seen
+
+
+# ---- system dependencies (generator 0.2.0) ---------------------------------
+def dep_edges(gold):
+    return [(g["subject"], g["object"], g["valid_at"], g["invalid_at"]) for g in gold if g["predicate"] == "DEPENDS_ON"]
+
+
+def upstream_hops(edges, system, depth, when):
+    """Independent BFS over DEPENDS_ON gold rows: who depends on `system`, with the shortest hop count."""
+    live = [(a, b) for a, b, v, inv in edges if v <= when and (inv is None or when < inv)]
+    hops, frontier = {}, {system}
+    for h in range(1, depth + 1):
+        frontier = {a for a, b in live if b in frontier and a not in hops and a != system}
+        hops.update(dict.fromkeys(frontier, h))
+    return hops
+
+
+def owner_at(gold, system, when):
+    (g,) = [g for g in gold if g["predicate"] == "OWNS" and g["object"] == system and "expected_gate" not in g
+            and g["valid_at"] <= when and (g["invalid_at"] is None or when < g["invalid_at"])]
+    return g["subject"]
+
+
+def test_generator_version_is_bumped():
+    from honest_memory.corpus import GENERATOR_VERSION
+    assert GENERATOR_VERSION == "0.2.0"
+
+
+def test_architecture_overview_lists_dependencies(eps, gold):
+    (doc,) = [e for e in eps if e["title"] == "Architecture overview"]
+    assert doc["channel"] == "doc" and "2026-08-17" <= doc["ts"] <= "2026-08-23T23:59:59Z"  # week 1
+    lines = [ln for ln in doc["text"].splitlines() if " depends on " in ln]
+    rows = [g for g in gold if g["predicate"] == "DEPENDS_ON" and doc["id"] in g["source_ids"]]
+    assert len(lines) == len(rows) == 8
+    for g in rows:
+        assert f"- {g['subject']} depends on {g['object']}." in lines and g["valid_at"] == doc["ts"]
+
+
+def test_longest_upstream_chain_is_four_hops(gold):
+    edges = dep_edges(gold)
+    systems = {x for a, b, *_ in edges for x in (a, b)}
+    assert len(systems) == 9
+    assert max(max(upstream_hops(edges, s, 9, "2026-10-12T00:00:00Z").values(), default=0) for s in systems) == 4
+
+
+def test_new_dependency_adr_in_weeks_four_to_six(gold, by_id):
+    (g,) = scenario(gold, "S10")
+    adr = by_id["ADR-0013"]
+    assert (g["subject"], g["predicate"], g["object"]) == ("reporting", "DEPENDS_ON", "billing-api")
+    assert "2026-09-07" <= adr["ts"] <= "2026-09-27T23:59:59Z" and g["valid_at"] == adr["ts"]
+    assert g["source_ids"] == ["ADR-0013"] and g["expected_gate"] == {"outcome": "ACCEPT"}
+    assert "reporting depends on billing-api" in adr["text"]
+    arch = next(e for e in by_id.values() if e["title"] == "Architecture overview")
+    assert "- reporting depends on billing-api." not in arch["text"]
+
+
+def parse_impact(answer):
+    if answer.startswith("Nothing"):
+        return {}
+    body = answer.split(": ", 1)[1].rstrip(".")
+    out = {}
+    for item in body.split("; "):
+        m = re.fullmatch(r"([\w-]+) \(owner (.+), (\w+), (\d) hops?\)", item)
+        assert m, item
+        out[m[1]] = (m[2], int(m[4]))
+    return out
+
+
+def test_impact_questions_match_gold_graph(gold, questions):
+    impact = [q for q in questions if q["type"] == "impact"]
+    assert len(impact) >= 5 and {q["scenario"] for q in impact} <= {"S9", "S10"}
+    edges = dep_edges(gold)
+    for q in impact:
+        m = re.fullmatch(r"What depends on ([\w-]+) within (\d) hops(?: as of (\d{4}-\d\d-\d\d))?, and who must be told\?",
+                         q["question"])
+        assert m, q["question"]
+        system, depth, as_of = m[1], int(m[2]), m[3]
+        assert q["as_of"] == as_of
+        when = f"{as_of}T23:59:59Z" if as_of else "2026-10-12T00:00:00Z"
+        want = {s: (owner_at(gold, s, when), h) for s, h in upstream_hops(edges, system, depth, when).items()}
+        assert parse_impact(q["answer"]) == want, q["id"]
+        assert q["source_ids"]
+
+
+def test_impact_questions_cover_time_depth_and_empty_cases(questions):
+    impact = {q["question"]: parse_impact(q["answer"]) for q in questions if q["type"] == "impact"}
+    assert any("as of" in q for q in impact)
+    assert any("within 2 hops" in q for q in impact)
+    assert any(not v for v in impact.values())
+    ledger = impact["What depends on ledger-db within 4 hops, and who must be told?"]
+    assert max(h for _, h in ledger.values()) == 4
+    before = impact["What depends on billing-api within 4 hops as of 2026-09-10, and who must be told?"]
+    after = impact["What depends on billing-api within 4 hops, and who must be told?"]
+    assert "reporting" in after and "reporting" not in before
+    ledger_then = impact["What depends on ledger-db within 4 hops as of 2026-09-10, and who must be told?"]
+    assert ledger_then["billing-api"][0] != ledger["billing-api"][0]  # billing-api changed owner on 2026-09-22
