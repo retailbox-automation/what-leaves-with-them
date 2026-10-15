@@ -49,9 +49,23 @@ REFUSAL = re.compile(r"\b(?:no|nothing|none|never|cannot|can't|unable|not|refus\
 ABSTAIN = re.compile(r"\b(?:do(?:es)? not (?:contain|mention|say|include|provide)|did not find|no (?:record|records|information|data|"
                      r"mention)|cannot (?:find|answer|determine|provide|share)|can't (?:find|answer|provide|share)|"
                      r"unable to (?:find|answer|determine)|not (?:mentioned|found|specified|available)|I am sorry)\b", re.I)
-PAST = re.compile(r"\b(?:before|previous(?:ly)?|prior|formerly|former|earlier|originally|until|till|used to|no longer|"
-                  r"stale|outdated|out of date|superseded|replaced|moved|transfer\w*|handed over|changed|closed|"
-                  r"claim\w*|rumou?r\w*|alleg\w*|disputed|backup|but|however|although|though|whereas)\b|\bfrom \d{4}-\d{2}-\d{2} (?:to|until)\b", re.I)
+# Words that say a relationship is over. Used on its own to accept "Nothing now: X ended" golds, and inside PAST.
+ENDED = re.compile(r"\b(?:ended|ending|until|till|no longer|formerly|previously|used to|closed|left|leaves?|leaving|"
+                   r"departed|departing|resigned)\b", re.I)
+PAST = re.compile(ENDED.pattern[:-3] + r"|before|previous|prior|former|earlier|originally|stale|outdated|out of date|"
+                  r"superseded|replaced|moved|transfer\w*|handed over|changed|claim\w*|rumou?r\w*|alleg\w*|disputed|"
+                  r"backup|but|however|although|though|whereas)\b|\bfrom \d{4}-\d{2}-\d{2} (?:to|until)\b", re.I)
+# What a sentence says about an item the gold excludes ("Not ADR-0014: ...") when it names it without claiming it.
+OTHERS = re.compile(r"\bothers?\b|\bbesides\b|\bsomeone else\b|\banyone else\b|\bmore than one\b|\bshared\b|\balso\b", re.I)
+EXCLUSION = re.compile(r"^Not (?P<item>[^:.;]+?):", re.I)
+# Present-tense wording that claims a relation, by predicate. Used for facts that ended (or have not started) when the
+# question names the value ("What does Oskar Alvarez own?"): mentioning him near a system claims nothing, "Oskar
+# Alvarez owns fernhill-sso" does. The words must sit between the two names (either order, no : ; or parenthesis).
+CLAIM_VERBS = {"OWNS": re.compile(r"\b(?:owns?|owners?|is responsible for|maintains|runs|(?:is|are) owned by)\b", re.I),
+               "MEMBER_OF": re.compile(r"\b(?:is a member of|are members of|member of|belongs? to|is in|is on)\b", re.I),
+               "LEADS": re.compile(r"\b(?:leads?|is led by|lead of)\b", re.I)}
+MAX_CLAIM_SPAN = 90
+BASIS = re.compile(r"\((?:by|via|through|based on)\b[^)]*\)", re.I)
 
 
 def _epoch(value: str | None, end_of_day: bool = False) -> int | None:
@@ -160,11 +174,23 @@ class Truth:
             return _epoch(q["as_of"], end_of_day=True)
         return self.now
 
+    def exclusions(self, q: dict) -> set[str]:
+        """Items the gold explicitly rules out: sentences of the form "Not ADR-0014: records behind it were ..."."""
+        out = set()
+        for sentence in re.split(r"(?<=[.!?])\s+", self.gold_text(q)):
+            m = EXCLUSION.match(sentence.strip())
+            if m and m["item"].strip() in self.names:
+                out.add(m["item"].strip())
+        return out
+
     def required_names(self, q: dict) -> set[str]:
         """Names a correct answer must contain. Left out: names the question already has; names the gold answer
         mentions only to reject a claim; names it gives only as history ("before that Sana Petrov"); a team in
-        parentheses after a person ("Luca Ostrander (Platform)")."""
-        clauses = [c for c in re.split(r"(?<=[.!?])\s+|[,;:]\s+", q["answer"])
+        parentheses after a person ("Luca Ostrander (Platform)"); sentences that rule an item out ("Not ADR-0014:
+        ..."); and what a parenthesis gives as the basis ("fernhill-sso (by work on auth)")."""
+        kept = [sentence for sentence in re.split(r"(?<=[.!?])\s+", self.gold_text(q))
+                if not (EXCLUSION.match(sentence.strip()) and self.exclusions({"answer": sentence}))]
+        clauses = [BASIS.sub(" ", c) for c in re.split(r"(?<=[.!?])\s+|[,;:]\s+", " ".join(kept))
                    if not CLAIM_CUE.search(c) and not HISTORY_CUE.search(c)]
         text = " ".join(clauses)
         outside = re.sub(r"\([^)]*\)", " ", text)
@@ -176,14 +202,14 @@ class Truth:
         """Every name in the gold answer except those the question already has: the brief's rule, without exemptions."""
         return self.find(q["answer"]) - self.find(q["question"])
 
-    def wrong_time_values(self, q: dict) -> dict[str, tuple[str, set[str]]]:
-        """Values that are not true at the question's time but were claimed or true at another time, with the kind
-        and the things they were claimed about: closed (true earlier, invalid_at passed), refused (only an unsourced
-        or older claim said so), not_yet (becomes true later). Only facts about something the question or its gold
-        names."""
+    def wrong_time_values(self, q: dict) -> dict[str, tuple[str, set[str], set[str]]]:
+        """Values that are not true at the question's time but were claimed or true at another time, with the kind,
+        the things they were claimed about and the predicates: closed (true earlier, invalid_at passed), refused (only
+        an unsourced or older claim said so), not_yet (becomes true later). Only facts about something the question or
+        its gold names."""
         t = self.question_time(q)
         topic = self.find(q["question"]) | self.find(q["answer"])
-        found: dict[str, tuple[str, set[str]]] = {}
+        found: dict[str, tuple[str, set[str], set[str]]] = {}
         rank = {"closed": 0, "refused": 1, "not_yet": 2}
         for f in self.facts:
             if f.pii or f.predicate not in PREDICATES:
@@ -199,33 +225,64 @@ class Truth:
             slot, value = f.slot_and_value
             if slot not in topic or value not in self.names:
                 continue
-            old_kind, slots = found.get(value, (kind, set()))
-            found[value] = (kind if rank[kind] < rank[old_kind] else old_kind, slots | {slot})
+            old_kind, slots, preds = found.get(value, (kind, set(), set()))
+            found[value] = (kind if rank[kind] < rank[old_kind] else old_kind, slots | {slot}, preds | {f.predicate})
         return found
 
 
 # --- scoring ----------------------------------------------------------------------------------
 
+def claims_relation(view: str, value: str, slots: set[str], preds: set[str], truth: Truth) -> bool:
+    """True when the sentence puts a present-tense relation word between the value and one of the things it relates to."""
+    cues = [CLAIM_VERBS[p] for p in preds if p in CLAIM_VERBS]
+    for slot in slots & truth.find(view):
+        for a in truth.rx[value].finditer(view):
+            for b in truth.rx[slot].finditer(view):
+                first, second = (a, b) if a.end() <= b.start() else (b, a)
+                between = view[first.end():second.start()]
+                if (first.end() <= second.start() and len(between) <= MAX_CLAIM_SPAN and not re.search(r"[:;()]", between)
+                        and any(c.search(between) for c in cues)):
+                    return True
+    return False
+
+
 def stale_values(q: dict, answer: str, truth: Truth, required: set[str]) -> list[dict]:
-    """A wrong-time value counts when a sentence names it next to what it was claimed about (or the question already
-    names that thing) and nothing in the sentence marks it as past, refused, disputed or contrasted."""
+    """A wrong-time value counts when a sentence names it next to what it was claimed about and nothing in the
+    sentence marks it as past, ended, refused, disputed or contrasted. The question may supply that thing ("Who owns
+    fernhill-sso now?"). When the question names the value itself ("What does Oskar Alvarez own?") and the fact ended or
+    has not started, the sentence has to claim the relation: a present-tense owns/member of/leads between the two
+    names. A refused claim is wrong at any time, so it needs no such wording."""
     asked = truth.find(q["question"])
     adversarial = q["type"] == "adversarial"
     hits = []
-    for value, (kind, slots) in sorted(truth.wrong_time_values(q).items()):
+    for value, (kind, slots, preds) in sorted(truth.wrong_time_values(q).items()):
         if value in required and not adversarial:
             continue            # the gold answer itself names it (a previous owner, a past record): not a mistake
-        if value in asked and kind != "refused":
-            continue            # echoing a name the question gave is not a claim
         for sentence in _sentences(answer):
+            view = sentence
             if truth.names[value] == "Team":
-                sentence = re.sub(r"\([^)]*\)", " ", sentence)       # "Aiko Rademacher (Growth)" labels, it does not claim
-            if not truth.rx[value].search(sentence):
+                view = re.sub(r"\([^)]*\)", " ", sentence)         # "Aiko Rademacher (Growth)" labels, it does not claim
+            if not truth.rx[value].search(view):
                 continue
-            if not (slots & (truth.find(sentence) | asked)):
+            if value in asked and kind != "refused":
+                if not claims_relation(view, value, slots, preds, truth):
+                    continue    # naming the person the question is about next to a system is not a claim about it
+            elif not slots & (truth.find(view) | asked):
                 continue        # "Growth" as someone's team, in a sentence that is not about what the rumour was about
             if not (PAST.search(sentence) or REFUSAL.search(sentence)):
                 hits.append({"value": value, "kind": kind, "sentence": sentence.strip()[:200]})
+                break
+    return hits
+
+
+def excluded_values(q: dict, answer: str, truth: Truth) -> list[dict]:
+    """Items the gold rules out that a sentence names without saying they have other authors, or are not the answer."""
+    hits = []
+    for item in sorted(truth.exclusions(q)):
+        for sentence in _sentences(answer):
+            if truth.rx[item].search(sentence) and not (REFUSAL.search(sentence) or PAST.search(sentence)
+                                                         or OTHERS.search(sentence)):
+                hits.append({"value": item, "sentence": sentence.strip()[:200]})
                 break
     return hits
 
@@ -280,10 +337,13 @@ def score(q: dict, answer: str, evidence: str, truth: Truth) -> dict:
     stale = stale_values(q, answer, truth, required)
     unsupported = unsupported_values(q, answer, evidence, truth)
     leaks = leaked(answer, truth)
-    answered_as_expected = refused or not expects_refusal
-    correct = not missing and answered_as_expected
-    literal = (not (truth.literal_names(q) - present) and all(_cites(answer, i) for i in sources)
-               and answered_as_expected)
+    excluded = excluded_values(q, answer, truth)
+    # "Nothing now: X ended on <date>": saying that X ended is as good as saying nothing is current.
+    ended_as_expected = bool(ENDED.search(q["answer"])) and bool(ENDED.search(answer))
+    answered_as_expected = refused or ended_as_expected or not expects_refusal
+    correct = not missing and answered_as_expected and not excluded
+    literal = (not (truth.literal_names(q) - present) and not excluded
+               and all(_cites(answer, i) for i in sources) and answered_as_expected)
     if q["type"] == "adversarial":
         correct = correct and not stale and not leaks
         literal = literal and not stale and not leaks
@@ -293,7 +353,7 @@ def score(q: dict, answer: str, evidence: str, truth: Truth) -> dict:
             "abstained": bool(ABSTAIN.search(answer)) and not expects_refusal,
             "required": sorted(required | sources), "missing": missing, "expects_refusal": expects_refusal,
             "refused": refused, "stale_values": stale, "unsupported_values": unsupported, "leaks": leaks,
-            "extra_names": extra}
+            "excluded_values": excluded, "extra_names": extra}
 
 
 # --- summaries --------------------------------------------------------------------------------
