@@ -1,6 +1,7 @@
 """The company graph as the panel draws it: people, teams, systems, decisions and projects, and the facts between them.
 
     company_graph(store, as_of=None) -> dict
+    episode(store, id) -> dict | None     one source record, for the hover cards and the handoff answers
 
 Without `as_of`: every current fact (a typed edge), and apart from them, in `ended`, the facts a last-day record
 ended without a successor (WAS edges closed by a CLOSE receipt). The departure tools read the same two sets, so the
@@ -9,6 +10,7 @@ With `as_of` (YYYY-MM-DD, the whole UTC day): the facts in force at the end of t
 now or were closed later; `ended` is empty.
 
 Records (Episode, GateDecision, Agent, Finding, Handoff) are not drawn. Every query is read-only and traced.
+A line of a record that looks like personal data (gate.detect_pii) is withheld from `episode`.
 """
 
 from __future__ import annotations
@@ -122,3 +124,19 @@ def company_graph(store: Store, as_of=None) -> dict:
         "leaving": sorted(leaving, key=lambda r: r["person"]),
         "trace": [{"query": t.query, "ms": t.ms, "rows": t.rows} for t in store.trace[first:]],
     }
+
+
+EPISODE = "MATCH (e:Episode {id: $id}) RETURN e.id, e.ts, e.channel, e.author, e.title, e.text"
+WITHHELD = "[withheld: looks like personal data]"
+
+
+def episode(store: Store, episode_id: str) -> dict | None:
+    rows = store.ro(EPISODE, {"id": episode_id})
+    if not rows:
+        return None
+    from .gate import detect_pii
+
+    eid, ts, channel, author, title, text = rows[0]
+    lines = [WITHHELD if detect_pii(line) else line for line in (text or "").splitlines()]
+    return {"id": eid, "ts": iso_ts(ts), "channel": channel or "", "author": author or "", "title": title or "",
+            "text": "\n".join(lines)}

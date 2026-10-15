@@ -7,6 +7,7 @@
     GET  /v1/{tenant}/graph               people, teams, systems, decisions, projects and the facts between them (?as_of=)
     GET  /v1/{tenant}/receipts            gate receipts, newest first (?outcome=&limit=)
     POST /v1/{tenant}/episodes            one source record -> the extractor and the write gate
+    GET  /v1/{tenant}/episodes/{id}       one source record (lines that look like personal data withheld)
 
 Env: FALKORDB_* (see store.connect), HM_LLM_* (see agent.py), HM_RATE_LIMIT_PER_MIN (default 120 per client
 IP; HM_TRUST_PROXY=1 reads X-Forwarded-For), HM_WRITE_TOKEN (when set, writes need `Authorization: Bearer`),
@@ -211,6 +212,15 @@ def create_app(db=None, *, rate_limit: int | None = None, web_dir: str | Path | 
     def graph(tenant: str, as_of: str | None = None):
         store = store_for(tenant)
         return snapshot.company_graph(store, T.parse_when(as_of) if as_of else None)
+
+    @app.get("/v1/{tenant}/episodes/{episode_id}")
+    def get_episode(tenant: str, episode_id: str):
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", episode_id):
+            raise HTTPException(422, "episode id must be letters, digits, '.', '_' or '-'")
+        found = snapshot.episode(store_for(tenant), episode_id)
+        if found is None:
+            raise HTTPException(404, f"no episode {episode_id!r}")
+        return found
 
     @app.get("/v1/{tenant}/receipts")
     def receipts(tenant: str, outcome: str | None = None, limit: int = 50):

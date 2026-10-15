@@ -106,3 +106,29 @@ def test_graph_endpoint(fx_store, monkeypatch):
     assert ("Sana Petrov", "OWNS", "billing-api") in edge_set(old["edges"])
     assert client.get(f"/v1/{tenant}/graph", params={"as_of": "last tuesday"}).status_code == 422
     assert client.get("/v1/no-such-tenant/graph").status_code == 404
+
+
+def test_one_episode_with_personal_data_withheld(fx_store):
+    fx_store.rw("CREATE (e:Episode) SET e = $p", {"p": {"id": "msg-0999", "ts": epoch("2026-09-02T10:00:00Z"),
+                                                        "channel": "chat", "author": "Sana Petrov", "title": "#payments",
+                                                        "text": "Rotated the keys.\nCall me on +1-555-0142 if it breaks."}})
+    e = snapshot.episode(fx_store, "msg-0999")
+    assert e == {"id": "msg-0999", "ts": "2026-09-02T10:00:00Z", "channel": "chat", "author": "Sana Petrov",
+                 "title": "#payments", "text": "Rotated the keys.\n" + snapshot.WITHHELD}
+    assert snapshot.episode(fx_store, "msg-0000") is None
+
+
+def test_episode_endpoint(fx_store, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    from honest_memory.api import create_app
+
+    monkeypatch.delenv("HM_TRUST_PROXY", raising=False)
+    client = TestClient(create_app(fx_store.db, web_dir="/nonexistent"))
+    tenant = fx_store.tenant
+    body = client.get(f"/v1/{tenant}/episodes/ADR-0009").json()
+    assert body["author"] == "Selma Marsh" and body["title"].startswith("ADR-0009")
+    assert client.get(f"/v1/{tenant}/episodes/NOPE-1").status_code == 404
+    assert client.get(f"/v1/{tenant}/episodes/a%20b").status_code == 422
