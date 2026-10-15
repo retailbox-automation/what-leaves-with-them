@@ -35,6 +35,7 @@ class Source:
     title: str = ""
     ts: str = ""
     channel: str = ""
+    author: str = ""
 
 
 @dataclass

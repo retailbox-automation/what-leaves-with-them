@@ -212,8 +212,9 @@ def _sources(store: Store, ids: list[str]) -> list[Source]:
     ids = list(dict.fromkeys(i for i in ids if i))[:MAX_SOURCES]
     if not ids:
         return []
-    rows = store.ro("UNWIND $ids AS i MATCH (e:Episode {id: i}) RETURN e.id, e.title, e.ts, e.channel", {"ids": ids})
-    found = {r[0]: Source(r[0], r[1] or "", iso_ts(r[2]), r[3] or "") for r in rows}
+    rows = store.ro("UNWIND $ids AS i MATCH (e:Episode {id: i}) RETURN e.id, e.title, e.ts, e.channel, e.author",
+                    {"ids": ids})
+    found = {r[0]: Source(r[0], r[1] or "", iso_ts(r[2]), r[3] or "", r[4] or "") for r in rows}
     return [found[i] for i in ids if i in found]
 
 
@@ -582,17 +583,20 @@ _CLOSED = "MATCH (x)-[h:WAS]-(n:{label} {{{key}: $k}}) RETURN h.invalid_at"
 
 _HANDOFFS = (
     "MATCH (h:Handoff) OPTIONAL MATCH (h)-[:FROM]->(f) OPTIONAL MATCH (h)-[:TO]->(t) "
-    "OPTIONAL MATCH (h)-[:CITES]->(e:Episode) "
-    "WITH h, coalesce(f.name, f.id) AS sender, coalesce(t.name, t.id) AS receiver, collect(e.id) AS cites "
+    "OPTIONAL MATCH (t)-[:MEMBER_OF]->(tt:Team) OPTIONAL MATCH (h)-[:CITES]->(e:Episode) "
+    "WITH h, coalesce(f.name, f.id) AS sender, coalesce(t.name, t.id) AS receiver, tt.name AS team, "
+    "collect(e.id) AS cites "
     "WHERE sender = $k OR receiver = $k OR toLower(h.topic) CONTAINS toLower($k) "
     "OR toLower(h.note) CONTAINS toLower($k) "
-    "RETURN h.id, h.topic, h.note, h.ts, sender, receiver, cites ORDER BY h.ts DESC LIMIT $limit")
+    "RETURN h.id, h.topic, h.note, h.ts, sender, receiver, team, cites ORDER BY h.ts DESC LIMIT $limit")
 
 _HANDOFFS_VIA_EPISODE = (
     "MATCH (h:Handoff)-[:CITES]->(:Episode)-[:MENTIONS]->(n:{label} {{{key}: $k}}) "
-    "OPTIONAL MATCH (h)-[:FROM]->(f) OPTIONAL MATCH (h)-[:TO]->(t) OPTIONAL MATCH (h)-[:CITES]->(e:Episode) "
-    "WITH DISTINCT h, coalesce(f.name, f.id) AS sender, coalesce(t.name, t.id) AS receiver, collect(e.id) AS cites "
-    "RETURN h.id, h.topic, h.note, h.ts, sender, receiver, cites ORDER BY h.ts DESC LIMIT $limit")
+    "OPTIONAL MATCH (h)-[:FROM]->(f) OPTIONAL MATCH (h)-[:TO]->(t) OPTIONAL MATCH (t)-[:MEMBER_OF]->(tt:Team) "
+    "OPTIONAL MATCH (h)-[:CITES]->(e:Episode) "
+    "WITH DISTINCT h, coalesce(f.name, f.id) AS sender, coalesce(t.name, t.id) AS receiver, tt.name AS team, "
+    "collect(e.id) AS cites "
+    "RETURN h.id, h.topic, h.note, h.ts, sender, receiver, team, cites ORDER BY h.ts DESC LIMIT $limit")
 
 
 def recall(store: Store, a: dict, ctx: Context) -> Answer:
@@ -611,12 +615,12 @@ def recall(store: Store, a: dict, ctx: Context) -> Answer:
         paths += [head + ["ABOUT", ent.name] + (["DERIVED_FROM", s] if s else []) for s in (src or [None])]
     seen: set[str] = set()
     handoffs = store.ro(_HANDOFFS, params) + store.ro(_HANDOFFS_VIA_EPISODE.format(label=ent.label, key=ent.key), params)
-    for hid, topic, note, ts, frm, to, src in handoffs:
+    for hid, topic, note, ts, frm, to, to_team, src in handoffs:
         if hid in seen:
             continue
         seen.add(hid)
         rows.append({"kind": "handoff", "id": hid, "topic": topic, "note": note, "at": iso_ts(ts), "from": frm,
-                     "to": to, "source_ids": src})
+                     "to": to, "to_team": to_team, "source_ids": src})
         paths += [[hid, "CITES", s] for s in src]
     if not rows:
         return _not_in_graph("recall", args, f"No agent has recorded a finding or a handoff about {ent.name}.")
