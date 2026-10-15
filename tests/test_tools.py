@@ -126,6 +126,30 @@ def test_impact_depth_one_versus_four(fx_store):
     assert four.rows[-1]["owner"] == "Priya Farrow" and four.rows[-1]["owner_team"] == "Support"
 
 
+def test_impact_as_of_a_date_uses_the_dependencies_and_owners_of_that_date(fx_store):
+    now = call(fx_store, "impact", system="billing-api")
+    then = call(fx_store, "impact", system="billing-api", as_of="2026-09-10")
+    assert [r["system"] for r in now.rows] == ["invoice-renderer", "reporting", "notifications", "status-page"]
+    assert [r["system"] for r in then.rows] == ["invoice-renderer", "notifications", "status-page"]  # reporting came later
+    assert then.args["as_of"] == "2026-09-10" and then.sentence.startswith("As of 2026-09-10, if billing-api")
+    ledger_now = call(fx_store, "impact", system="ledger-db")
+    ledger_then = call(fx_store, "impact", system="ledger-db", as_of="2026-09-10")
+    owner = lambda ans, system: next(r["owner"] for r in ans.rows if r["system"] == system)
+    assert (owner(ledger_now, "billing-api"), owner(ledger_then, "billing-api")) == ("Luca Ostrander", "Sana Petrov")
+    assert [(r["system"], r["hops"]) for r in ledger_then.rows] == [
+        ("billing-api", 1), ("reporting", 1), ("invoice-renderer", 2), ("notifications", 3), ("status-page", 4)]
+    assert call(fx_store, "impact", system="ledger-db", as_of="2026-08-01").outcome == A.NOT_IN_GRAPH
+
+
+def test_impact_rows_carry_the_documents_behind_each_dependent(fx_store):
+    ans = call(fx_store, "impact", system="billing-api")
+    rows = {r["system"]: r for r in ans.rows}
+    assert rows["reporting"]["source_ids"][0] == "ADR-0009" and "DOC-01" in rows["invoice-renderer"]["source_ids"]
+    assert {s.id for s in ans.sources} >= {"DOC-01", "ADR-0009"}
+    empty = call(fx_store, "impact", system="webhooks")
+    assert "come from ADR-0009, DOC-01" in empty.note and [s.id for s in empty.sources] == ["ADR-0009", "DOC-01"]
+
+
 def test_impact_keeps_the_shortest_path_per_dependent(fx_store):
     ans = call(fx_store, "impact", system="ledger-db", depth=4)
     reporting = [p for p in ans.paths if p[0] == "reporting"]
@@ -179,7 +203,13 @@ def test_why_the_rumour_was_refused_and_what_is_held_instead(fx_store):
     assert (receipt["outcome"], receipt["reasons"], receipt["cited"]) == ("REJECT", ["no_source", "conflicts_current"], [])
     assert (current["subject"], current["since"][:10]) == ("Luca Ostrander", "2026-09-22")
     assert "refused" in ans.sentence and "Luca Ostrander" in ans.sentence
-    assert ans.receipts[0].id == "gd-0100"
+    assert ans.receipts[0].id == "gd-0100" and receipt["claimed_in"] == "msg-0174"
+    assert ["gd-0100", "CLAIMED_IN", "msg-0174"] in ans.paths and "msg-0174" in {s.id for s in ans.sources}
+
+
+def test_why_finds_a_refused_claim_by_the_message_it_was_read_in(fx_store):
+    ans = call(fx_store, "why", subject="msg-0174")
+    assert ans.outcome == A.ANSWERED_WITH_PATH and [r["receipt"] for r in ans.rows] == ["gd-0100"]
 
 
 def test_why_does_not_echo_refused_personal_data(fx_store):
@@ -206,6 +236,8 @@ def test_what_changed_nothing_but_refused_claims_is_not_in_graph(fx_store):
     ans = call(fx_store, "what_changed", since="2026-09-23", predicate="OWNS")
     assert ans.outcome == A.NOT_IN_GRAPH and [r["change"] for r in ans.rows] == ["refused", "refused"]
     assert "Growth OWNS billing-api" in ans.sentence and "refused" in ans.sentence
+    assert [r["claimed_in"] for r in ans.rows] == ["msg-0174", "msg-0181"]
+    assert {s.id for s in ans.sources} == {"msg-0174", "msg-0181"}
 
 
 def test_what_changed_since_is_strictly_after_the_day(fx_store):
@@ -326,7 +358,10 @@ def test_schemas_validate_example_arguments():
 def test_write_tools_need_the_gate(fx_store, monkeypatch):
     import sys
 
+    import honest_memory
+
     monkeypatch.setitem(sys.modules, "honest_memory.gate", None)  # makes the import fail
+    monkeypatch.delattr(honest_memory, "gate", raising=False)
     with pytest.raises(T.GateUnavailable):
         call(fx_store, "remember", text="note about billing-api", about=["billing-api"], source_ids=["ADR-0009"])
     unknown = call(fx_store, "remember", text="note", about=["billing-apix"], source_ids=[])

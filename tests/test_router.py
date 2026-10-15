@@ -1,7 +1,8 @@
 """The deterministic router against the seed-42 corpus questions.
 
-Routing is pure (no database). The answer check loads the gold facts as a graph (tests/gold_graph.py)
-on every engine, runs the routed tool and looks for the gold answer's names and sources in the result.
+Routing is pure (no database). The answer check ingests the seed-42 corpus through the extractor and the
+write gate into a tenant on every engine, runs the routed tool and looks for the gold answer's names and
+sources in the result.
 """
 
 import json
@@ -37,6 +38,7 @@ RIGHT_TOOLS = [
     (r"^How many independent sources", {"current_owner", "why"}),
     (r"^Which team is", {"facts_about"}),
     (r"^Who leads the project", {"facts_about"}),
+    (r"^What depends on", {"impact"}),
     (r"^Who decided ADR", {"facts_about", "decision_trail"}),
 ]
 
@@ -118,11 +120,13 @@ def evaluate(store) -> dict:
 
 
 @pytest.fixture(scope="module", params=PORTS, ids=lambda p: f"falkordb:{p}")
-def gold_store(request):
-    from tests.gold_graph import load_gold
+def gold_store(request, tmp_path_factory):
+    from honest_memory.corpus.generator import write_corpus
+    from honest_memory.ingest import ingest_corpus
 
+    out = write_corpus(build(42), tmp_path_factory.mktemp("corpus") / "corpus")
     s = make_store(request.param, f"gold{request.param}")
-    s.loaded = load_gold(s)
+    s.summary = ingest_corpus(s, out)
     s.trace.clear()
     yield s
     s.drop()
@@ -136,11 +140,9 @@ def test_gold_questions_answered_with_the_gold_names(gold_store):
     print(summary)
     for f in failures:
         print("  FAIL", f["id"], f["tool"], f["outcome"], f["question"], f["missing_names"], f["missing_sources"])
-    # 4 project-lead questions cannot be answered: the schema has no Project label (LEADS runs Person -> Team)
-    assert gold_store.loaded["skipped_leads"] == 5
-    assert {f["id"] for f in failures} <= {"Q053", "Q054", "Q055", "Q056"}, summary
-    assert all(f["outcome"] == A.UNKNOWN_ENTITY for f in failures)
+    assert result["right_tool"] == result["n"], summary
     assert not any(r["phone_leak"] for r in result["rows"])
+    assert result["all"] >= result["n"] - 2, summary
 
 
 def test_adversarial_questions_are_answered_honestly(gold_store):
@@ -158,12 +160,15 @@ if __name__ == "__main__":  # python tests/test_router.py [port]  -> the accurac
     import sys
 
     sys.path.insert(0, ".")
-    from tests.gold_graph import load_gold
+    import tempfile
+
+    from honest_memory.corpus.generator import write_corpus
+    from honest_memory.ingest import ingest_corpus
 
     port = int(sys.argv[1]) if len(sys.argv) > 1 else PORTS[0]
     st = make_store(port, f"report{os.getpid()}")
     try:
-        load_gold(st)
+        ingest_corpus(st, write_corpus(build(42), __import__("pathlib").Path(tempfile.mkdtemp()) / "corpus"))
         res = evaluate(st)
         print(json.dumps({k: v for k, v in res.items() if k != "rows"}))
         for row in res["rows"]:

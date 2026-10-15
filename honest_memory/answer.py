@@ -48,6 +48,7 @@ class Receipt:
     subject: str = ""
     object: str = ""
     cites: list[str] = field(default_factory=list)
+    claim: str = ""     # the episode a refused claim was read in, when it is not one of its sources
 
 
 @dataclass
@@ -213,7 +214,8 @@ def _impact(a: Answer) -> str:
         owner = f", owner {r['owner']}" if r.get("owner") else ", no owner recorded"
         parts.append(f"{r['system']} ({r['hops']} hop{'s' if r['hops'] != 1 else ''}{owner})")
     n, depth = len(a.rows), a.args.get("depth", 4)
-    return (f"If {a.args['system']} goes down, {n} system{'s' if n != 1 else ''} depend on it within {depth} "
+    when = f"As of {a.args['as_of']}, if" if a.args.get("as_of") else "If"
+    return (f"{when} {a.args['system']} goes down, {n} system{'s' if n != 1 else ''} depend on it within {depth} "
             f"hop{'s' if depth != 1 else ''}: " + "; ".join(parts) + ".")
 
 

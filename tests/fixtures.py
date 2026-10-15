@@ -39,6 +39,7 @@ EPISODES = {  # id -> (channel, ts, author, title)
                  "ADR-0009: Transfer billing-api ownership from Sana Petrov to Luca Ostrander"),
     "msg-0148": ("chat", "2026-09-22T17:31:00Z", "Luca Ostrander", "#platform"),
     "msg-0174": ("chat", "2026-09-29T16:27:00Z", "Aiko Rademacher", "#general"),
+    "msg-0181": ("chat", "2026-09-30T14:00:00Z", "Priya Farrow", "#support"),
     "TCK-0044": ("ticket", "2026-09-03T15:46:00Z", "Priya Farrow", "Customer cannot receive paper invoices"),
     "TCK-0076": ("ticket", "2026-09-15T14:34:00Z", "Priya Farrow", "Customer reports duplicate invoice emails"),
     "TCK-0077": ("ticket", "2026-09-15T16:34:00Z", "Priya Farrow",
@@ -54,10 +55,15 @@ class Builder:
         self.n = 0
         self.gate: dict[str, str] = {}
 
-    def receipt(self, gid, outcome, reasons, ts, predicate, subject, obj, cites=(), about=()):
-        self.s.rw("CREATE (g:GateDecision) SET g = $p", {"p": {
-            "id": gid, "outcome": outcome, "reasons": list(reasons), "ts": epoch(ts), "predicate": predicate,
-            "subject": subject, "object": obj, "proposer": "extractor:rules"}})
+    def receipt(self, gid, outcome, reasons, ts, predicate, subject, obj, cites=(), about=(), claim=None):
+        props = {"id": gid, "outcome": outcome, "reasons": list(reasons), "ts": epoch(ts), "predicate": predicate,
+                 "subject": subject, "object": obj, "proposer": "extractor:rules"}
+        if claim:
+            props["claim_episode"] = claim
+        self.s.rw("CREATE (g:GateDecision) SET g = $p", {"p": props})
+        if claim and claim not in cites:  # where a refused claim was read, when it is not one of its sources
+            self.s.rw("MATCH (g:GateDecision {id: $g}), (e:Episode {id: $e}) CREATE (g)-[:CLAIMED_IN]->(e)",
+                      {"g": gid, "e": claim})
         for ep in cites:
             self.s.rw("MATCH (g:GateDecision {id: $g}), (e:Episode {id: $e}) CREATE (g)-[:CITES]->(e)", {"g": gid, "e": ep})
         for label, key, name in about:
@@ -112,10 +118,11 @@ def build_fixture(store: Store) -> dict[str, str]:
         b.fact("OWNS", owner, system, t0, sources, "Person", "System")
 
     # a 4-hop chain (status-page > notifications > invoice-renderer > billing-api > ledger-db) and a diamond
-    for up, down in (("status-page", "notifications"), ("notifications", "invoice-renderer"),
-                     ("invoice-renderer", "billing-api"), ("billing-api", "ledger-db"),
-                     ("reporting", "billing-api"), ("reporting", "ledger-db")):
-        b.fact("DEPENDS_ON", up, down, t0, ["DOC-01"], "System", "System", {"weight": 1})
+    for up, down, since, src in (("status-page", "notifications", t0, "DOC-01"), ("notifications", "invoice-renderer", t0, "DOC-01"),
+                                 ("invoice-renderer", "billing-api", t0, "DOC-01"), ("billing-api", "ledger-db", t0, "DOC-01"),
+                                 ("reporting", "billing-api", "2026-09-17T15:50:00Z", "ADR-0009"),  # added later
+                                 ("reporting", "ledger-db", t0, "DOC-01")):
+        b.fact("DEPENDS_ON", up, down, since, [src], "System", "System", {"weight": 1})
 
     for person, system, count in (("Mateo Sandoval", "ledger-db", 10), ("Pavel Hollis", "ledger-db", 7),
                                   ("Sana Petrov", "ledger-db", 5), ("Luca Ostrander", "ledger-db", 3),
@@ -132,9 +139,10 @@ def build_fixture(store: Store) -> dict[str, str]:
 
     # three refused writes, each with a receipt
     b.receipt("gd-0100", "REJECT", ["no_source", "conflicts_current"], "2026-09-29T16:27:00Z", "OWNS", "Growth",
-              "billing-api", about=[("Team", "name", "Growth"), ("System", "name", "billing-api")])
+              "billing-api", about=[("Team", "name", "Growth"), ("System", "name", "billing-api")], claim="msg-0174")
     b.receipt("gd-0101", "REJECT", ["older_than_current"], "2026-09-30T14:00:00Z", "OWNS", "Sana Petrov", "billing-api",
-              cites=["RB-05"], about=[("Person", "name", "Sana Petrov"), ("System", "name", "billing-api")])
+              cites=["RB-05"], about=[("Person", "name", "Sana Petrov"), ("System", "name", "billing-api")],
+              claim="msg-0181")
     b.receipt("gd-0102", "REJECT", ["pii"], "2026-09-03T15:46:00Z", "HAS_PHONE", "Customer in TCK-0044", "+1-555-0159",
               cites=["TCK-0044"])
 

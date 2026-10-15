@@ -42,6 +42,11 @@ def _depth(q: str) -> dict:
     return {"depth": 1} if re.search(r"\b(directly|direct|immediate(?:ly)?)\b", q, re.I) else {}
 
 
+def _as_of(q: str) -> dict:
+    m = re.search(rf"\bas of (?P<date>{DATE})", q, re.I)
+    return {"as_of": m["date"]} if m else {}
+
+
 PII_PREDICATES = (
     (r"phone|telephone|mobile number|cell number", "HAS_PHONE"),
     (r"e-?mail", "HAS_EMAIL"),
@@ -139,7 +144,7 @@ RULES: tuple[Rule, ...] = (
           rf"\bwhat (?:depends on|relies on|sits (?:upstream|downstream) of|uses) (?P<sys2>{NAME})|"
           rf"\b(?:impact|blast radius|dependents?|downstream) (?:of|for|on) (?P<sys3>{NAME})|"
           rf"\bwhat (?:is|are) (?:the )?(?:systems? )?(?:affected|impacted) (?:by|if) (?P<sys4>{NAME})",
-          lambda m: ("impact", {"system": _clean(m["sys"] or m["sys2"] or m["sys3"] or m["sys4"]), **_depth(m.string)})),
+          lambda m: ("impact", {"system": _clean(m["sys"] or m["sys2"] or m["sys3"] or m["sys4"]), **_depth(m.string), **_as_of(m.string)})),
     _rule("who_knows", rf"\bwho (?:knows|has worked on|worked on|is the expert (?:on|in)|are the experts (?:on|in))\b(?: the most)?(?: about| on| in| with)? (?P<sys>{NAME})|"
           rf"\brank the people who worked on (?P<sys2>{NAME})|\bwho should i ask about (?P<sys3>{NAME})",
           lambda m: ("who_knows", {"system": _clean(m["sys"] or m["sys2"] or m["sys3"])})),

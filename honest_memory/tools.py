@@ -29,7 +29,7 @@ from .store import Store, epoch
 
 KEYS = {**ENTITY_KEYS, **RECORD_KEYS}
 ENTITY_LABELS = tuple(ENTITY_KEYS)
-ANY_ENTITY = ("System", "Person", "Team", "Decision", "Agent")
+ANY_ENTITY = ("System", "Person", "Team", "Decision", "Project", "Agent")
 PREDICATE_NAMES = tuple(PREDICATES)
 MAX_DEPTH = 4
 MAX_SOURCES = 12
@@ -223,15 +223,16 @@ def _redact(reasons: list[str], predicate: str | None) -> bool:
 
 
 def _receipt(r: list) -> Receipt:
-    gid, outcome, reasons, ts, pred, subj, obj, cites = r
+    gid, outcome, reasons, ts, pred, subj, obj, cites, claim = r
     reasons = reasons or []
     if _redact(reasons, pred):  # the memory must not echo the personal data it refused to store
         subj, obj = "[personal data]", "[personal data]"
     return Receipt(gid, outcome or "", reasons, iso_ts(ts), pred or "", subj or "", obj or "",
-                   sorted(c for c in cites if c))
+                   sorted(c for c in cites if c), claim or "")
 
 
-_RECEIPT_COLUMNS = "g.id, g.outcome, g.reasons, g.ts, g.predicate, g.subject, g.object, collect(e.id)"
+_RECEIPT_COLUMNS = ("g.id, g.outcome, g.reasons, g.ts, g.predicate, g.subject, g.object, "
+                    "collect(DISTINCT e.id), g.claim_episode")
 
 
 def _receipts(store: Store, ids: list[str]) -> list[Receipt]:
@@ -264,8 +265,8 @@ def _finish(ans: Answer) -> Answer:
     return ans
 
 
-def _not_in_graph(tool: str, args: dict, note: str) -> Answer:
-    return _finish(Answer(A.NOT_IN_GRAPH, tool, args, note=note))
+def _not_in_graph(tool: str, args: dict, note: str, sources: list[Source] | None = None) -> Answer:
+    return _finish(Answer(A.NOT_IN_GRAPH, tool, args, sources=sources or [], note=note))
 
 
 # --- read tools ----------------------------------------------------------------------------
@@ -275,10 +276,11 @@ def current_owner(store: Store, a: dict, ctx: Context) -> Answer:
     rows = store.ro(
         "MATCH (p:Person)-[r:OWNS]->(s:System {name: $system}) "
         "OPTIONAL MATCH (p)-[:MEMBER_OF]->(t:Team) "
-        "OPTIONAL MATCH prov = (s)<-[:ABOUT]-(g:GateDecision {id: r.gate_id})-[:CITES]->(e:Episode) "
+        "OPTIONAL MATCH prov = (s)<-[:ABOUT]-(g:GateDecision)-[:CITES]->(e:Episode) "
+        "WHERE g.predicate = 'OWNS' AND g.subject = p.name AND g.outcome IN $ok AND e.id IN r.source_ids "
         "RETURN p.name, t.name, r.valid_at, r.source_ids, r.gate_id, "
         "[n IN nodes(prov) | coalesce(n.name, n.id)], [x IN relationships(prov) | type(x)] "
-        "ORDER BY e.id", {"system": system})
+        "ORDER BY e.id, g.ts", {"system": system, "ok": list(GATE_OK)})
     args = {"system": system}
     if not rows:
         return _not_in_graph("current_owner", args, f"{system} exists, but the graph records no current owner "
@@ -293,9 +295,12 @@ def current_owner(store: Store, a: dict, ctx: Context) -> Answer:
     if prev:
         row.update(previous_owner=prev[0][0], previous_team=prev[0][1], previous_until=iso_ts(prev[0][2]))
     fact = [owner, "OWNS", system]
-    paths = [fact + _fixed(r[5], r[6], "<>")[1:] for r in rows if r[5]] or [fact]
+    prov = [r for r in rows if r[5]]
+    paths = [fact + _fixed(r[5], r[6], "<>")[1:] for r in prov] or [fact]
+    # the receipt that wrote the fact, then the ones that confirmed it with further sources
+    receipts = _receipts(store, [gate_id] + [r[5][1] for r in prov])
     return _finish(Answer(A.ANSWERED_WITH_PATH, "current_owner", args, [row], paths,
-                          _sources(store, row["source_ids"]), _receipts(store, [gate_id])))
+                          _sources(store, row["source_ids"]), receipts))
 
 
 _OWNERS_AT = (
@@ -365,23 +370,69 @@ _IMPACT = (
     "MATCH path = (u:System)-[:DEPENDS_ON*1..{depth}]->(s:System {{name: $system}}) "
     "WITH u, path ORDER BY length(path) "
     "WITH u, collect(path)[0] AS best "
-    "OPTIONAL MATCH (o:Person)-[:OWNS]->(u) "
+    "OPTIONAL MATCH (o:Person)-[ro:OWNS]->(u) "
     "OPTIONAL MATCH (o)-[:MEMBER_OF]->(t:Team) "
-    "RETURN u.name, length(best), [n IN nodes(best) | n.name], [x IN relationships(best) | type(x)], o.name, t.name "
+    "RETURN u.name, length(best), [n IN nodes(best) | n.name], [x IN relationships(best) | type(x)], o.name, t.name, "
+    "[x IN relationships(best) | x.source_ids], ro.source_ids "
     "ORDER BY length(best), u.name LIMIT 200")
+
+_DEPENDENCY_DOCS = "MATCH ()-[r:DEPENDS_ON]->() UNWIND r.source_ids AS sid RETURN DISTINCT sid ORDER BY sid LIMIT 6"
+
+
+_IMPACT_PATHS = (
+    "MATCH path = (u:System)-[:DEPENDS_ON*1..{depth}]->(s:System {{name: $system}}) "
+    "RETURN u.name, length(path), [n IN nodes(path) | n.name], [x IN relationships(path) | type(x)], "
+    "[x IN relationships(path) | x.valid_at], [x IN relationships(path) | x.source_ids] "
+    "ORDER BY length(path), u.name LIMIT 1000")
+
+_OWNERS_AS_OF = (
+    "UNWIND $names AS n MATCH (p:Person)-[r:OWNS]->(s:System {name: n}) WHERE r.valid_at <= $t "
+    "RETURN n AS system, p.name AS owner, r.valid_at AS v, r.source_ids AS src "
+    "UNION "
+    "UNWIND $names AS n MATCH (p:Person)-[r:WAS]->(s:System {name: n}) "
+    "WHERE r.predicate = 'OWNS' AND r.valid_at <= $t AND r.invalid_at > $t "
+    "RETURN n AS system, p.name AS owner, r.valid_at AS v, r.source_ids AS src")
+
+
+def _impact_as_of(store: Store, system: str, depth: int, when: When) -> list[list]:
+    """Dependents as of a date, in the shape of the present-day query: only edges that already existed count,
+    the shortest such path is kept per dependent, and owners are those of that date. Filtering happens here
+    because FalkorDB 6.0.x does not take an all(...) filter over a variable-length relationship."""
+    best: dict[str, list] = {}
+    for name, hops, names, types, valid, edge_src in store.ro(_IMPACT_PATHS.format(depth=depth), {"system": system}):
+        if name not in best and all(v is not None and v <= when.end for v in valid):
+            best[name] = [name, hops, names, types]
+            best[name].append(edge_src)
+    if not best:
+        return []
+    held = {r[0]: r for r in sorted(store.ro(_OWNERS_AS_OF, {"names": list(best), "t": when.end}), key=lambda r: r[2])}
+    team = dict(store.ro("UNWIND $owners AS o MATCH (p:Person {name: o}) OPTIONAL MATCH (p)-[:MEMBER_OF]->(t:Team) "
+                         "RETURN o, t.name", {"owners": sorted({r[1] for r in held.values()})}))
+    out = []
+    for name, hops, names, types, edge_src in best.values():
+        owner = held.get(name)
+        out.append([name, hops, names, types, owner[1] if owner else None, team.get(owner[1]) if owner else None,
+                    edge_src, owner[3] if owner else None])
+    return out
 
 
 def impact(store: Store, a: dict, ctx: Context) -> Answer:
-    system, depth = a["system"].name, a["depth"]
-    args = {"system": system, "depth": depth}
-    rows = store.ro(_IMPACT.format(depth=depth), {"system": system})
+    system, depth, when = a["system"].name, a["depth"], a.get("as_of")
+    args = {"system": system, "depth": depth, **({"as_of": when.label} if when else {})}
+    rows = (_impact_as_of(store, system, depth, when) if when
+            else store.ro(_IMPACT.format(depth=depth), {"system": system}))
     if not rows:
+        docs = [r[0] for r in store.ro(_DEPENDENCY_DOCS)]
+        basis = f" The dependencies the graph holds come from {', '.join(docs)}." if docs else ""
         return _not_in_graph("impact", args, f"No system depends on {system} within {depth} hop"
-                             f"{'s' if depth != 1 else ''} in the graph. That means no dependency is recorded, "
-                             "which is not the same as nothing breaking.")
-    out = [{"system": r[0], "hops": r[1], "owner": r[4], "owner_team": r[5]} for r in rows]
+                             f"{'s' if depth != 1 else ''}{f' as of {when.label}' if when else ''} in the graph. "
+                             f"That means no dependency is recorded, which is not the same as nothing breaking.{basis}",
+                             _sources(store, docs))
+    out = [{"system": r[0], "hops": r[1], "owner": r[4], "owner_team": r[5],
+            "source_ids": list(dict.fromkeys([i for lst in r[6] for i in (lst or [])] + list(r[7] or [])))} for r in rows]
     paths = [_fixed(r[2], r[3], ">" * len(r[3])) for r in rows]
-    return _finish(Answer(A.ANSWERED_WITH_PATH, "impact", args, out, paths))
+    return _finish(Answer(A.ANSWERED_WITH_PATH, "impact", args, out, paths,
+                          _sources(store, [i for r in out for i in r["source_ids"]])))
 
 
 def who_knows(store: Store, a: dict, ctx: Context) -> Answer:
@@ -459,7 +510,8 @@ def decision_trail(store: Store, a: dict, ctx: Context) -> Answer:
 
 def _receipt_row(r: Receipt) -> dict:
     return {"kind": "receipt", "receipt": r.id, "outcome": r.outcome, "reasons": r.reasons, "at": r.ts,
-            "subject": r.subject, "predicate": r.predicate, "object": r.object, "cited": r.cites}
+            "subject": r.subject, "predicate": r.predicate, "object": r.object, "cited": r.cites,
+            "claimed_in": r.claim or None}
 
 
 _WHY_BY_NAME = (
@@ -469,7 +521,7 @@ _WHY_BY_NAME = (
     "OPTIONAL MATCH (g)-[:CITES]->(e:Episode) RETURN " + _RECEIPT_COLUMNS + " ORDER BY g.ts")
 
 _WHY_BY_EPISODE = (
-    "MATCH (g:GateDecision)-[:CITES]->(c:Episode {id: $subject}) "
+    "MATCH (g:GateDecision)-[:CITES|CLAIMED_IN]->(c:Episode {id: $subject}) "
     "WHERE $predicate IS NULL OR g.predicate = $predicate "
     "OPTIONAL MATCH (g)-[:CITES]->(e:Episode) RETURN " + _RECEIPT_COLUMNS + " ORDER BY g.ts")
 
@@ -499,6 +551,7 @@ def why(store: Store, a: dict, ctx: Context) -> Answer:
     receipts = [_receipt(r) for r in store.ro(_WHY_BY_EPISODE if subject.label == "Episode" else _WHY_BY_NAME, params)]
     rows = [_receipt_row(r) for r in receipts]
     paths = [[r.id, "CITES", c] for r in receipts for c in r.cites]
+    paths += [[r.id, "CLAIMED_IN", r.claim] for r in receipts if r.claim and r.claim not in r.cites]
     if predicate in PREDICATES and subject.label != "Episode":
         for f in _current_for(store, predicate, subject, obj):
             rows.append({"kind": "current", "subject": f["subject"], "predicate": predicate, "object": f["object"],
@@ -507,7 +560,8 @@ def why(store: Store, a: dict, ctx: Context) -> Answer:
     if not rows:
         return _not_in_graph("why", args, f"The memory holds no receipt and no current fact for "
                              f"{' '.join(str(x) for x in (subject.name, predicate, obj.name if obj else None) if x)}.")
-    ids = [c for r in receipts for c in r.cites] + [i for r in rows if r["kind"] == "current" for i in r["source_ids"]]
+    ids = ([c for r in receipts for c in r.cites + [r.claim]]
+           + [i for r in rows if r["kind"] == "current" for i in r["source_ids"]])
     return _finish(Answer(A.ANSWERED_WITH_PATH, "why", args, rows, paths, _sources(store, ids), receipts))
 
 
@@ -536,7 +590,8 @@ def what_changed(store: Store, a: dict, ctx: Context) -> Answer:
         "MATCH (g:GateDecision) WHERE g.outcome = 'REJECT' AND g.ts > $t AND ($pred IS NULL OR g.predicate = $pred) "
         "OPTIONAL MATCH (g)-[:CITES]->(e:Episode) RETURN " + _RECEIPT_COLUMNS + " ORDER BY g.ts LIMIT $limit", params)]
     refused_rows = [{"change": "refused", "predicate": r.predicate, "subject": r.subject, "object": r.object,
-                     "at": r.ts, "source_ids": r.cites, "gate_id": r.id, "reasons": r.reasons} for r in refused]
+                     "at": r.ts, "source_ids": r.cites, "gate_id": r.id, "reasons": r.reasons,
+                     "claimed_in": r.claim or None} for r in refused]
     rows.sort(key=lambda r: r["at"])
     if not rows:
         what = f"{predicate} " if predicate else ""
@@ -545,10 +600,11 @@ def what_changed(store: Store, a: dict, ctx: Context) -> Answer:
             claims = "; ".join(f"{r['subject']} {r['predicate']} {r['object']} ({', '.join(r['reasons']) or 'refused'})"
                                for r in refused_rows[:3])
             note += f" {len(refused_rows)} claim{'s were' if len(refused_rows) != 1 else ' was'} refused, not stored: {claims}."
-        ans = Answer(A.NOT_IN_GRAPH, "what_changed", args, refused_rows, [], [], refused, note=note)
+        claims = [r["claimed_in"] for r in refused_rows if r["claimed_in"]]
+        ans = Answer(A.NOT_IN_GRAPH, "what_changed", args, refused_rows, [], _sources(store, claims), refused, note=note)
         return _finish(ans)
     rows += refused_rows
-    ids = [i for r in rows for i in r["source_ids"]]
+    ids = [i for r in rows for i in r["source_ids"] + [r.get("claimed_in")]]
     return _finish(Answer(A.ANSWERED_WITH_PATH, "what_changed", args, rows, paths, _sources(store, ids), refused))
 
 
@@ -583,11 +639,12 @@ _CLOSED = "MATCH (x)-[h:WAS]-(n:{label} {{{key}: $k}}) RETURN h.invalid_at"
 
 _HANDOFFS = (
     "MATCH (h:Handoff) OPTIONAL MATCH (h)-[:FROM]->(f) OPTIONAL MATCH (h)-[:TO]->(t) "
-    "OPTIONAL MATCH (t)-[:MEMBER_OF]->(tt:Team) OPTIONAL MATCH (h)-[:CITES]->(e:Episode) "
+    "OPTIONAL MATCH (t)-[:MEMBER_OF]->(tt:Team) OPTIONAL MATCH (f)-[:MEMBER_OF]->(ft:Team) "
+    "OPTIONAL MATCH (h)-[:CITES]->(e:Episode) "
     "WITH h, coalesce(f.name, f.id) AS sender, coalesce(t.name, t.id) AS receiver, tt.name AS team, "
-    "collect(e.id) AS cites "
-    "WHERE sender = $k OR receiver = $k OR toLower(h.topic) CONTAINS toLower($k) "
-    "OR toLower(h.note) CONTAINS toLower($k) "
+    "ft.name AS sender_team, collect(e.id) AS cites "
+    "WHERE sender = $k OR receiver = $k OR team = $k OR sender_team = $k "
+    "OR toLower(h.topic) CONTAINS toLower($k) OR toLower(h.note) CONTAINS toLower($k) "
     "RETURN h.id, h.topic, h.note, h.ts, sender, receiver, team, cites ORDER BY h.ts DESC LIMIT $limit")
 
 _HANDOFFS_VIA_EPISODE = (
@@ -675,9 +732,12 @@ def _jsonable(value):
 def _write_answer(store: Store, tool: str, args: dict, result, source_ids: list[str]) -> Answer:
     outcome = str(getattr(result.outcome, "value", result.outcome)).upper()
     reasons = [str(getattr(r, "value", r)) for r in (result.reasons or [])]
+    if outcome == "REJECT" and "pii" in reasons:  # do not hand the refused personal data back in the answer
+        args = {k: "[redacted: personal data]" if k in ("text", "topic", "note") and v else v for k, v in args.items()}
     receipts = _receipts(store, [result.receipt_id]) or [Receipt(result.receipt_id, outcome, reasons)]
     note = f"Refused: {', '.join(reasons)}." if outcome == "REJECT" else ""
-    rows = [{"written": _jsonable(result.written), "closed": _jsonable(result.closed)}]
+    rows = [{"written": _jsonable(result.written), "closed": _jsonable(result.closed),
+             "record_id": getattr(result, "record_id", None)}]
     return _finish(Answer(A.GATE_OUTCOMES[outcome], tool, args, rows, [], _sources(store, source_ids), receipts, note=note))
 
 
@@ -714,7 +774,9 @@ TOOLS: dict[str, Tool] = {t.name: t for t in (
          (SYSTEM,), escalation_path),
     Tool("impact", "What depends on a system, up to a number of hops upstream, and who owns each dependent.",
          (SYSTEM, Arg("depth", "int", "How many dependency hops to follow (1-4).", required=False, low=1,
-                      high=MAX_DEPTH, default=MAX_DEPTH)), impact),
+                      high=MAX_DEPTH, default=MAX_DEPTH),
+          Arg("as_of", "date", "Only dependencies and owners that existed by this date (whole UTC day).",
+              required=False)), impact),
     Tool("who_knows", "Who has worked on a system, ranked by how many work items they touched.",
          (SYSTEM, Arg("limit", "int", "How many people to return (1-50).", required=False, low=1, high=50,
                       default=10)), who_knows),
@@ -856,6 +918,6 @@ def call(store: Store, name: str, args: dict | None = None, ctx: Context | None 
     clean = _validate(tool, raw)
     resolved = _resolve_all(store, tool, clean, raw)
     ans = resolved if isinstance(resolved, Answer) else tool.fn(store, resolved, ctx or Context())
-    shown = {k: v for k, v in raw.items() if v is not None}
+    shown = ans.args if tool.writes and ans.args else {k: v for k, v in raw.items() if v is not None}
     ans.trace = [_trace(name, shown, store, mark, ans)]
     return ans
