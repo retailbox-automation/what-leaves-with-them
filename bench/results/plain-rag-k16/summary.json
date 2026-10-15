@@ -1,8 +1,8 @@
 {
   "meta": {
-    "started": "2026-10-15T19:23:00Z",
-    "finished": "2026-10-15T19:24:19Z",
-    "wall_seconds": 78.8,
+    "started": "2026-10-15T19:52:44Z",
+    "finished": "2026-10-15T19:53:39Z",
+    "wall_seconds": 55.2,
     "seed": 42,
     "generator_version": "0.2.0",
     "corpus_sha256": "20891ae56d988f3512325c4e56a58d7eb1bc6724f312a671d18856f8666433f0",
@@ -10,7 +10,7 @@
     "k": 16,
     "chunk": "episode",
     "reasoning": "none",
-    "commit": "8d553aa (uncommitted changes)",
+    "commit": "c59ae69",
     "ollama_version": "0.40.4",
     "models": {
       "chat": {
@@ -50,7 +50,7 @@
         "abstained": 25.8,
         "clean": 54.5,
         "leaked": 2,
-        "median_ms": 722
+        "median_ms": 685
       },
       "by_type": {
         "adversarial": {
@@ -63,7 +63,7 @@
           "abstained": 0.0,
           "clean": 25.0,
           "leaked": 2,
-          "median_ms": 694
+          "median_ms": 681
         },
         "current_state": {
           "n": 23,
@@ -75,7 +75,7 @@
           "abstained": 13.0,
           "clean": 87.0,
           "leaked": 0,
-          "median_ms": 662
+          "median_ms": 608
         },
         "handoff": {
           "n": 1,
@@ -87,7 +87,7 @@
           "abstained": 0.0,
           "clean": 0.0,
           "leaked": 0,
-          "median_ms": 755
+          "median_ms": 702
         },
         "impact": {
           "n": 6,
@@ -99,7 +99,7 @@
           "abstained": 50.0,
           "clean": 16.7,
           "leaked": 0,
-          "median_ms": 736
+          "median_ms": 745
         },
         "provenance": {
           "n": 9,
@@ -111,7 +111,7 @@
           "abstained": 0.0,
           "clean": 66.7,
           "leaked": 0,
-          "median_ms": 747
+          "median_ms": 737
         },
         "state_at_time": {
           "n": 7,
@@ -123,7 +123,7 @@
           "abstained": 28.6,
           "clean": 71.4,
           "leaked": 0,
-          "median_ms": 972
+          "median_ms": 707
         },
         "what_changed_since": {
           "n": 6,
@@ -135,7 +135,7 @@
           "abstained": 0.0,
           "clean": 50.0,
           "leaked": 0,
-          "median_ms": 1201
+          "median_ms": 1072
         },
         "who_knows": {
           "n": 10,
@@ -147,7 +147,7 @@
           "abstained": 90.0,
           "clean": 0.0,
           "leaked": 0,
-          "median_ms": 580
+          "median_ms": 543
         }
       }
     }

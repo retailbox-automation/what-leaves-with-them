@@ -2,10 +2,10 @@
 
 Plain retrieval against honest-memory on the synthetic Quillfield Billing corpus: 66 questions, seed 42, corpus generator 0.2.0 (files sha256 `20891ae56d98`).
 
-- Run: 2026-10-15T19:26:17Z to 2026-10-15T19:27:19Z UTC (1.0 min), repo commit `8d553aa (uncommitted changes)`.
+- Run: 2026-10-15T19:51:40Z to 2026-10-15T19:52:43Z UTC (1.0 min), repo commit `c59ae69`.
 - Chat model, for plain RAG and for the agent: `gemma4:26b-a4b-it-qat` (25.2B, Q4_0, digest `2dd70431afed`), temperature 0, reasoning_effort `none`, via Ollama 0.40.4.
 - Embeddings for plain RAG: `embeddinggemma` (digest `85462619ee72`), top-k 8, units: whole episodes.
-- FalkorDB 6.0.2 on port 6390; ingest: 382 episodes, 197 gate decisions in 1.7 s (ACCEPT 94, CONFIRM 98, SUPERSEDE 1, REJECT 4).
+- FalkorDB 6.0.2 on port 6390; ingest: 382 episodes, 197 gate decisions in 1.07 s (ACCEPT 94, CONFIRM 98, SUPERSEDE 1, REJECT 4).
 
 How each column is decided is in `bench/score.py` (names and dates, no model as judge) and `bench/README.md`. **clean** = correct and not stale, unsupported or leaking personal data. **no answer** = the answer says the records or memory do not hold it (a miss, not a wrong answer).
 
@@ -13,8 +13,8 @@ How each column is decided is in `bench/score.py` (names and dates, no model as 
 
 | system | n | correct % | stale % | unsupported % | clean % | no answer % | median ms | literal-rule correct % | sentence-only correct % | personal data leaks |
 |---|---|---|---|---|---|---|---|---|---|---|
-| honest-memory, router (no model) | 66 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 | 90.9 | 97.0 | 0 |
-| honest-memory, LLM agent | 66 | 90.9 | 0.0 | 0.0 | 90.9 | 0.0 | 738 | 72.7 | 84.8 | 0 |
+| honest-memory, router (no model) | 66 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1 | 90.9 | 97.0 | 0 |
+| honest-memory, LLM agent | 66 | 90.9 | 0.0 | 0.0 | 90.9 | 0.0 | 663 | 72.7 | 84.8 | 0 |
 
 - Agent: 65 of 66 answers are the model's own sentence (it passed the check against the rows); the rest are the template sentence built from the rows. 0 questions fell back to the router because the model called no tool; 0 runs recorded an error.
 
@@ -24,27 +24,27 @@ How each column is decided is in `bench/score.py` (names and dates, no model as 
 
 | type | n | correct % | stale % | unsupported % | clean % | no answer % | median ms |
 |---|---|---|---|---|---|---|---|
-| adversarial | 4 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
-| current_state | 23 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
-| handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 4 |
-| impact | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 3 |
-| provenance | 9 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 3 |
-| state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
-| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 3 |
-| who_knows | 10 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
+| adversarial | 4 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1 |
+| current_state | 23 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1 |
+| handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
+| impact | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
+| provenance | 9 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
+| state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1 |
+| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1 |
+| who_knows | 10 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1 |
 
 ### honest-memory, LLM agent
 
 | type | n | correct % | stale % | unsupported % | clean % | no answer % | median ms |
 |---|---|---|---|---|---|---|---|
-| adversarial | 4 | 75.0 | 0.0 | 0.0 | 75.0 | 0.0 | 813 |
-| current_state | 23 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 534 |
-| handoff | 1 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 474 |
-| impact | 6 | 50.0 | 0.0 | 0.0 | 50.0 | 0.0 | 1,537 |
-| provenance | 9 | 88.9 | 0.0 | 0.0 | 88.9 | 0.0 | 804 |
-| state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 747 |
-| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1,076 |
-| who_knows | 10 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 699 |
+| adversarial | 4 | 75.0 | 0.0 | 0.0 | 75.0 | 0.0 | 736 |
+| current_state | 23 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 513 |
+| handoff | 1 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 454 |
+| impact | 6 | 50.0 | 0.0 | 0.0 | 50.0 | 0.0 | 1,431 |
+| provenance | 9 | 88.9 | 0.0 | 0.0 | 88.9 | 0.0 | 746 |
+| state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 691 |
+| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 927 |
+| who_knows | 10 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 634 |
 
 ## Questions each system got wrong
 

@@ -2,7 +2,7 @@
 
 Plain retrieval against honest-memory on the synthetic Quillfield Billing corpus: 66 questions, seed 42, corpus generator 0.2.0 (files sha256 `20891ae56d98`).
 
-- Run: 2026-10-15T19:24:19Z to 2026-10-15T19:25:05Z UTC (0.8 min), repo commit `8d553aa (uncommitted changes)`.
+- Run: 2026-10-15T19:53:39Z to 2026-10-15T19:54:18Z UTC (0.7 min), repo commit `c59ae69`.
 - Chat model, for plain RAG and for the agent: `gemma4:26b-a4b-it-qat` (25.2B, Q4_0, digest `2dd70431afed`), temperature 0, reasoning_effort `none`, via Ollama 0.40.4.
 - Embeddings for plain RAG: `embeddinggemma` (digest `85462619ee72`), top-k 8, units: single lines.
 - FalkorDB not used on port 6393; ingest: 382 episodes, 0 gate decisions in 0 s ().
@@ -13,7 +13,7 @@ How each column is decided is in `bench/score.py` (names and dates, no model as 
 
 | system | n | correct % | stale % | unsupported % | clean % | no answer % | median ms | literal-rule correct % | sentence-only correct % | personal data leaks |
 |---|---|---|---|---|---|---|---|---|---|---|
-| plain RAG | 66 | 60.6 | 3.0 | 0.0 | 60.6 | 9.1 | 462 | 54.5 | 60.6 | 2 |
+| plain RAG | 66 | 60.6 | 3.0 | 0.0 | 60.6 | 9.1 | 449 | 54.5 | 60.6 | 2 |
 
 - Plain RAG retrieval: a gold source record was among the top-k for 59 of 65 questions that have sources, and all of them for 44.
 
@@ -23,14 +23,14 @@ How each column is decided is in `bench/score.py` (names and dates, no model as 
 
 | type | n | correct % | stale % | unsupported % | clean % | no answer % | median ms |
 |---|---|---|---|---|---|---|---|
-| adversarial | 4 | 0.0 | 25.0 | 0.0 | 0.0 | 0.0 | 512 |
-| current_state | 23 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 374 |
-| handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 420 |
-| impact | 6 | 0.0 | 16.7 | 0.0 | 0.0 | 16.7 | 519 |
-| provenance | 9 | 55.6 | 0.0 | 0.0 | 55.6 | 0.0 | 420 |
-| state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 517 |
-| what_changed_since | 6 | 66.7 | 0.0 | 0.0 | 66.7 | 16.7 | 614 |
-| who_knows | 10 | 0.0 | 0.0 | 0.0 | 0.0 | 40.0 | 535 |
+| adversarial | 4 | 0.0 | 25.0 | 0.0 | 0.0 | 0.0 | 486 |
+| current_state | 23 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 385 |
+| handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 384 |
+| impact | 6 | 0.0 | 16.7 | 0.0 | 0.0 | 16.7 | 548 |
+| provenance | 9 | 55.6 | 0.0 | 0.0 | 55.6 | 0.0 | 393 |
+| state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 488 |
+| what_changed_since | 6 | 66.7 | 0.0 | 0.0 | 66.7 | 16.7 | 574 |
+| who_knows | 10 | 0.0 | 0.0 | 0.0 | 0.0 | 40.0 | 500 |
 
 ## Questions each system got wrong
 

@@ -2,7 +2,7 @@
 
 Plain retrieval against honest-memory on the synthetic Quillfield Billing corpus: 66 questions, seed 42, corpus generator 0.2.0 (files sha256 `20891ae56d98`).
 
-- Run: 2026-10-15T19:25:06Z to 2026-10-15T19:26:01Z UTC (0.9 min), repo commit `8d553aa (uncommitted changes)`.
+- Run: 2026-10-15T19:54:19Z to 2026-10-15T19:55:06Z UTC (0.8 min), repo commit `c59ae69`.
 - Chat model, for plain RAG and for the agent: `gemma4:26b-a4b-it-qat` (25.2B, Q4_0, digest `2dd70431afed`), temperature 0, reasoning_effort `none`, via Ollama 0.40.4.
 - Embeddings for plain RAG: `embeddinggemma` (digest `85462619ee72`), top-k 16, units: single lines.
 - FalkorDB not used on port 6393; ingest: 382 episodes, 0 gate decisions in 0 s ().
@@ -13,7 +13,7 @@ How each column is decided is in `bench/score.py` (names and dates, no model as 
 
 | system | n | correct % | stale % | unsupported % | clean % | no answer % | median ms | literal-rule correct % | sentence-only correct % | personal data leaks |
 |---|---|---|---|---|---|---|---|---|---|---|
-| plain RAG | 66 | 71.2 | 4.5 | 0.0 | 69.7 | 15.2 | 634 | 65.2 | 71.2 | 2 |
+| plain RAG | 66 | 71.2 | 4.5 | 0.0 | 69.7 | 15.2 | 569 | 65.2 | 71.2 | 2 |
 
 - Plain RAG retrieval: a gold source record was among the top-k for 64 of 65 questions that have sources, and all of them for 49.
 
@@ -23,14 +23,14 @@ How each column is decided is in `bench/score.py` (names and dates, no model as 
 
 | type | n | correct % | stale % | unsupported % | clean % | no answer % | median ms |
 |---|---|---|---|---|---|---|---|
-| adversarial | 4 | 25.0 | 25.0 | 0.0 | 25.0 | 0.0 | 699 |
-| current_state | 23 | 100.0 | 4.3 | 0.0 | 95.7 | 0.0 | 533 |
-| handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 610 |
-| impact | 6 | 16.7 | 16.7 | 0.0 | 16.7 | 33.3 | 756 |
-| provenance | 9 | 88.9 | 0.0 | 0.0 | 88.9 | 0.0 | 606 |
-| state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 721 |
-| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 863 |
-| who_knows | 10 | 0.0 | 0.0 | 0.0 | 0.0 | 80.0 | 562 |
+| adversarial | 4 | 25.0 | 25.0 | 0.0 | 25.0 | 0.0 | 612 |
+| current_state | 23 | 100.0 | 4.3 | 0.0 | 95.7 | 0.0 | 521 |
+| handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 549 |
+| impact | 6 | 16.7 | 16.7 | 0.0 | 16.7 | 33.3 | 672 |
+| provenance | 9 | 88.9 | 0.0 | 0.0 | 88.9 | 0.0 | 570 |
+| state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 755 |
+| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 805 |
+| who_knows | 10 | 0.0 | 0.0 | 0.0 | 0.0 | 80.0 | 524 |
 
 ## Questions each system got wrong
 
@@ -67,6 +67,6 @@ Every row below is `correct = false`; the full verdicts (matched names, stale an
 | id | flag | value | evidence |
 |---|---|---|---|
 | Q001 | stale (refused) | Growth | Records msg-0174 also note that billing-api is owned by Growth. |
-| Q041 | stale (refused) | Growth | Yes, billing-api is owned by Growth now (msg-0174). |
+| Q041 | stale (refused) | Growth | Yes, billing-api is owned by Growth now . |
 | Q063 | stale (refused) | Growth | The following depend on billing-api: auth, ledger-db, webhooks, invoice-renderer, admin-console, reporting, and Growth. |
 

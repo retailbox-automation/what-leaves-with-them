@@ -1,8 +1,8 @@
 {
   "meta": {
-    "started": "2026-10-15T19:20:31Z",
-    "finished": "2026-10-15T19:22:53Z",
-    "wall_seconds": 141.7,
+    "started": "2026-10-15T19:49:42Z",
+    "finished": "2026-10-15T19:51:40Z",
+    "wall_seconds": 118.1,
     "seed": 42,
     "generator_version": "0.2.0",
     "corpus_sha256": "20891ae56d988f3512325c4e56a58d7eb1bc6724f312a671d18856f8666433f0",
@@ -10,7 +10,7 @@
     "k": 8,
     "chunk": "episode",
     "reasoning": "none",
-    "commit": "8d553aa (uncommitted changes)",
+    "commit": "c59ae69",
     "ollama_version": "0.40.4",
     "models": {
       "chat": {
@@ -34,7 +34,7 @@
       "honest-agent"
     ],
     "ingest": {
-      "tenant": "bench_409fbc9581",
+      "tenant": "bench_c9f595aae8",
       "episodes": 382,
       "gate_calls": 197,
       "outcomes": {
@@ -53,7 +53,7 @@
         "older_than_current": 1,
         "pii": 2
       },
-      "seconds": 2.63
+      "seconds": 1.36
     }
   },
   "systems": {
@@ -68,7 +68,7 @@
         "abstained": 31.8,
         "clean": 51.5,
         "leaked": 2,
-        "median_ms": 574
+        "median_ms": 466
       },
       "by_type": {
         "adversarial": {
@@ -81,7 +81,7 @@
           "abstained": 0.0,
           "clean": 25.0,
           "leaked": 2,
-          "median_ms": 529
+          "median_ms": 497
         },
         "current_state": {
           "n": 23,
@@ -93,7 +93,7 @@
           "abstained": 21.7,
           "clean": 78.3,
           "leaked": 0,
-          "median_ms": 517
+          "median_ms": 406
         },
         "handoff": {
           "n": 1,
@@ -105,7 +105,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 483
+          "median_ms": 460
         },
         "impact": {
           "n": 6,
@@ -117,7 +117,7 @@
           "abstained": 33.3,
           "clean": 16.7,
           "leaked": 0,
-          "median_ms": 901
+          "median_ms": 574
         },
         "provenance": {
           "n": 9,
@@ -129,7 +129,7 @@
           "abstained": 22.2,
           "clean": 55.6,
           "leaked": 0,
-          "median_ms": 573
+          "median_ms": 495
         },
         "state_at_time": {
           "n": 7,
@@ -141,7 +141,7 @@
           "abstained": 42.9,
           "clean": 57.1,
           "leaked": 0,
-          "median_ms": 801
+          "median_ms": 795
         },
         "what_changed_since": {
           "n": 6,
@@ -153,7 +153,7 @@
           "abstained": 16.7,
           "clean": 66.7,
           "leaked": 0,
-          "median_ms": 850
+          "median_ms": 650
         },
         "who_knows": {
           "n": 10,
@@ -165,7 +165,7 @@
           "abstained": 80.0,
           "clean": 0.0,
           "leaked": 0,
-          "median_ms": 512
+          "median_ms": 409
         }
       }
     },
@@ -193,7 +193,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 4
+          "median_ms": 3
         },
         "current_state": {
           "n": 23,
@@ -205,7 +205,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 3
+          "median_ms": 5
         },
         "handoff": {
           "n": 1,
@@ -217,7 +217,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 7
+          "median_ms": 28
         },
         "impact": {
           "n": 6,
@@ -229,7 +229,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 4
+          "median_ms": 5
         },
         "provenance": {
           "n": 9,
@@ -241,7 +241,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 4
+          "median_ms": 2
         },
         "state_at_time": {
           "n": 7,
@@ -265,7 +265,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 5
+          "median_ms": 3
         },
         "who_knows": {
           "n": 10,
@@ -277,7 +277,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 3
+          "median_ms": 2
         }
       }
     },
@@ -292,7 +292,7 @@
         "abstained": 0.0,
         "clean": 90.9,
         "leaked": 0,
-        "median_ms": 734
+        "median_ms": 712
       },
       "by_type": {
         "adversarial": {
@@ -305,7 +305,7 @@
           "abstained": 0.0,
           "clean": 75.0,
           "leaked": 0,
-          "median_ms": 823
+          "median_ms": 765
         },
         "current_state": {
           "n": 23,
@@ -317,7 +317,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 580
+          "median_ms": 528
         },
         "handoff": {
           "n": 1,
@@ -329,7 +329,7 @@
           "abstained": 0.0,
           "clean": 0.0,
           "leaked": 0,
-          "median_ms": 509
+          "median_ms": 5022
         },
         "impact": {
           "n": 6,
@@ -341,7 +341,7 @@
           "abstained": 0.0,
           "clean": 50.0,
           "leaked": 0,
-          "median_ms": 1945
+          "median_ms": 1525
         },
         "provenance": {
           "n": 9,
@@ -353,7 +353,7 @@
           "abstained": 0.0,
           "clean": 88.9,
           "leaked": 0,
-          "median_ms": 833
+          "median_ms": 760
         },
         "state_at_time": {
           "n": 7,
@@ -365,7 +365,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 788
+          "median_ms": 718
         },
         "what_changed_since": {
           "n": 6,
@@ -377,7 +377,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 1064
+          "median_ms": 976
         },
         "who_knows": {
           "n": 10,
@@ -389,7 +389,7 @@
           "abstained": 0.0,
           "clean": 100.0,
           "leaked": 0,
-          "median_ms": 696
+          "median_ms": 714
         }
       }
     }

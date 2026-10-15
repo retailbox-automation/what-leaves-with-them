@@ -2,10 +2,10 @@
 
 Plain retrieval against honest-memory on the synthetic Quillfield Billing corpus: 66 questions, seed 42, corpus generator 0.2.0 (files sha256 `20891ae56d98`).
 
-- Run: 2026-10-15T19:20:31Z to 2026-10-15T19:22:53Z UTC (2.4 min), repo commit `8d553aa (uncommitted changes)`.
+- Run: 2026-10-15T19:49:42Z to 2026-10-15T19:51:40Z UTC (2.0 min), repo commit `c59ae69`.
 - Chat model, for plain RAG and for the agent: `gemma4:26b-a4b-it-qat` (25.2B, Q4_0, digest `2dd70431afed`), temperature 0, reasoning_effort `none`, via Ollama 0.40.4.
 - Embeddings for plain RAG: `embeddinggemma` (digest `85462619ee72`), top-k 8, units: whole episodes.
-- FalkorDB 4.22.0 on port 6393; ingest: 382 episodes, 197 gate decisions in 2.63 s (ACCEPT 94, CONFIRM 98, SUPERSEDE 1, REJECT 4).
+- FalkorDB 4.22.0 on port 6393; ingest: 382 episodes, 197 gate decisions in 1.36 s (ACCEPT 94, CONFIRM 98, SUPERSEDE 1, REJECT 4).
 
 How each column is decided is in `bench/score.py` (names and dates, no model as judge) and `bench/README.md`. **clean** = correct and not stale, unsupported or leaking personal data. **no answer** = the answer says the records or memory do not hold it (a miss, not a wrong answer).
 
@@ -13,9 +13,9 @@ How each column is decided is in `bench/score.py` (names and dates, no model as 
 
 | system | n | correct % | stale % | unsupported % | clean % | no answer % | median ms | literal-rule correct % | sentence-only correct % | personal data leaks |
 |---|---|---|---|---|---|---|---|---|---|---|
-| plain RAG | 66 | 51.5 | 4.5 | 0.0 | 51.5 | 31.8 | 574 | 43.9 | 51.5 | 2 |
+| plain RAG | 66 | 51.5 | 4.5 | 0.0 | 51.5 | 31.8 | 466 | 43.9 | 51.5 | 2 |
 | honest-memory, router (no model) | 66 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 3 | 90.9 | 97.0 | 0 |
-| honest-memory, LLM agent | 66 | 90.9 | 0.0 | 0.0 | 90.9 | 0.0 | 734 | 72.7 | 84.8 | 0 |
+| honest-memory, LLM agent | 66 | 90.9 | 0.0 | 0.0 | 90.9 | 0.0 | 712 | 72.7 | 84.8 | 0 |
 
 - Plain RAG retrieval: a gold source record was among the top-k for 48 of 65 questions that have sources, and all of them for 35.
 - Agent: 65 of 66 answers are the model's own sentence (it passed the check against the rows); the rest are the template sentence built from the rows. 0 questions fell back to the router because the model called no tool; 0 runs recorded an error.
@@ -26,40 +26,40 @@ How each column is decided is in `bench/score.py` (names and dates, no model as 
 
 | type | n | correct % | stale % | unsupported % | clean % | no answer % | median ms |
 |---|---|---|---|---|---|---|---|
-| adversarial | 4 | 25.0 | 25.0 | 0.0 | 25.0 | 0.0 | 529 |
-| current_state | 23 | 78.3 | 0.0 | 0.0 | 78.3 | 21.7 | 517 |
-| handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 483 |
-| impact | 6 | 16.7 | 33.3 | 0.0 | 16.7 | 33.3 | 901 |
-| provenance | 9 | 55.6 | 0.0 | 0.0 | 55.6 | 22.2 | 573 |
-| state_at_time | 7 | 57.1 | 0.0 | 0.0 | 57.1 | 42.9 | 801 |
-| what_changed_since | 6 | 66.7 | 0.0 | 0.0 | 66.7 | 16.7 | 850 |
-| who_knows | 10 | 0.0 | 0.0 | 0.0 | 0.0 | 80.0 | 512 |
+| adversarial | 4 | 25.0 | 25.0 | 0.0 | 25.0 | 0.0 | 497 |
+| current_state | 23 | 78.3 | 0.0 | 0.0 | 78.3 | 21.7 | 406 |
+| handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 460 |
+| impact | 6 | 16.7 | 33.3 | 0.0 | 16.7 | 33.3 | 574 |
+| provenance | 9 | 55.6 | 0.0 | 0.0 | 55.6 | 22.2 | 495 |
+| state_at_time | 7 | 57.1 | 0.0 | 0.0 | 57.1 | 42.9 | 795 |
+| what_changed_since | 6 | 66.7 | 0.0 | 0.0 | 66.7 | 16.7 | 650 |
+| who_knows | 10 | 0.0 | 0.0 | 0.0 | 0.0 | 80.0 | 409 |
 
 ### honest-memory, router (no model)
 
 | type | n | correct % | stale % | unsupported % | clean % | no answer % | median ms |
 |---|---|---|---|---|---|---|---|
-| adversarial | 4 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 4 |
-| current_state | 23 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 3 |
-| handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 7 |
-| impact | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 4 |
-| provenance | 9 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 4 |
+| adversarial | 4 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 3 |
+| current_state | 23 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 5 |
+| handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 28 |
+| impact | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 5 |
+| provenance | 9 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
 | state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
-| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 5 |
-| who_knows | 10 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 3 |
+| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 3 |
+| who_knows | 10 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
 
 ### honest-memory, LLM agent
 
 | type | n | correct % | stale % | unsupported % | clean % | no answer % | median ms |
 |---|---|---|---|---|---|---|---|
-| adversarial | 4 | 75.0 | 0.0 | 0.0 | 75.0 | 0.0 | 823 |
-| current_state | 23 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 580 |
-| handoff | 1 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 509 |
-| impact | 6 | 50.0 | 0.0 | 0.0 | 50.0 | 0.0 | 1,945 |
-| provenance | 9 | 88.9 | 0.0 | 0.0 | 88.9 | 0.0 | 833 |
-| state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 788 |
-| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1,064 |
-| who_knows | 10 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 696 |
+| adversarial | 4 | 75.0 | 0.0 | 0.0 | 75.0 | 0.0 | 765 |
+| current_state | 23 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 528 |
+| handoff | 1 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 5,022 |
+| impact | 6 | 50.0 | 0.0 | 0.0 | 50.0 | 0.0 | 1,525 |
+| provenance | 9 | 88.9 | 0.0 | 0.0 | 88.9 | 0.0 | 760 |
+| state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 718 |
+| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 976 |
+| who_knows | 10 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 714 |
 
 ## Questions each system got wrong
 
@@ -121,8 +121,8 @@ Every row below is `correct = false`; the full verdicts (matched names, stale an
 
 | id | flag | value | evidence |
 |---|---|---|---|
-| Q041 | stale (refused) | Growth | Yes, billing-api is owned by Growth (msg-0174). |
-| Q063 | stale (refused) | Growth | Route billing-api questions to Growth (msg-0174). |
+| Q041 | stale (refused) | Growth | Yes, billing-api is owned by Growth . |
+| Q063 | stale (refused) | Growth | Route billing-api questions to Growth . |
 | Q064 | stale (refused) | Growth | According to msg-0148 and msg-0174, you must route questions or escalations to Luca Ostrander or Growth. |
 | Q064 | stale (not_yet) | reporting | As of 2026-09-10, the systems that depend on billing-api are invoice-renderer, webhooks, admin-console, and reporting (per ARCH-01 and ADR-0013). |
 

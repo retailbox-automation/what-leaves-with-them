@@ -13,10 +13,12 @@ uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e '.[ap
 ollama pull gemma4:26b-a4b-it-qat && ollama pull embeddinggemma
 docker run -d -p 6393:6379 falkordb/falkordb:v4.22.0        # or falkordb/falkordb:6.0.2
 
-.venv/bin/python -m bench.run --port 6393                    # all three systems, seed 42, about 25 minutes
+.venv/bin/python -m bench.run --port 6393                    # all three systems, seed 42, about 2 minutes on an M-series Mac
 ```
 
 `bench.run` builds the corpus fresh from the repo's generator (seed 42, deterministic), ingests it through the write gate into a throwaway tenant graph (`hm_bench_<random>`, dropped at the end), answers every question with each system, scores, and writes `bench/results/*` and `bench/RESULTS.md`.
+
+Every result set in this folder (other engine, stronger baselines, model thinking on), about 10 minutes: `PORT_422=6393 PORT_602=6390 bash bench/run_all.sh`. [`SENSITIVITY.md`](SENSITIVITY.md) is its summary.
 
 Other forms:
 
@@ -44,7 +46,7 @@ If the corpus generator, the question set or the tool catalogue change, run the 
 - it is asked to name the record ids its answer rests on (the agent's tool results carry sources separately);
 - the better of the two local embedding models: `nomic-embed-text` (with its search prefixes) put a gold source record in the top 8 for 68% of questions and all of them for 40%; `embeddinggemma` (with its prompt format) 74% and 54%. The baseline uses `embeddinggemma`. Measured once on this question set, not tuned further.
 
-It is not given chunking, hybrid search, reranking or a bigger k. Those make a stronger baseline and a different benchmark; the brief fixes k = 8 over whole episodes.
+The headline baseline has no chunking, hybrid search or reranking, and k is 8 over whole episodes, as specified. Because that is the weakest reasonable version, [`SENSITIVITY.md`](SENSITIVITY.md) also runs it with k = 16 and with one retrieval unit per line (`--chunk lines`, which lets it find a single entry of the service catalogue). Correct goes from 51.5% to 57.6% (k = 16), 60.6% (lines) and 71.2% (lines, k = 16); stale answers stay at 3 to 5 of 66 and the personal data is still repeated. Retrieval was never the whole problem.
 
 ## How an answer is scored
 
@@ -56,14 +58,32 @@ No model judges anything. `bench/score.py` compares the answer text with the cor
 - **leaked**: the answer repeats a personal value (the phone number, the address) that the write gate refuses to store.
 - **clean**: correct, and not stale, unsupported or leaked.
 
+**Thinking is off for every model call** (`reasoning_effort: none`, same for the baseline and the agent). With it on, gemma4 spends 3,000 to 4,000 tokens thinking per question and a single call can take 50 seconds or run past the token budget, which made the baseline unusable in a 66-question run. The agent was also run with the model's own thinking: 92.4% correct instead of 90.9% (one more question), median 1.7 s instead of 0.7 s ([`SENSITIVITY.md`](SENSITIVITY.md)).
+
 Latency is wall-clock per question: query embedding, retrieval and the model for plain RAG; the tool call for the router; the model and the tool calls for the agent. The Mac was shared with other work, so treat latency as an order of magnitude.
+
+## What the numbers say, and where honest-memory lost
+
+On this corpus plain RAG is correct on 51.5% of 66 questions; 21 of its 32 misses are "the records do not contain it" (a miss, not a wrong answer), and 11 are confident wrong or incomplete answers, including 3 that state a value that was not true at that time (Growth as the owner of billing-api from an unsourced chat message; `reporting` depending on billing-api before ADR-0013) and 2 that repeat a phone number and a mailing address. The router answers all 66; the LLM agent 60 (90.9%), with 0 stale, 0 unsupported and 0 leaked.
+
+The 6 questions the agent missed (`results/honest-agent-seed42.jsonl` has the tool calls):
+
+| id | what happened |
+|---|---|
+| Q034 | Right records (DOC-01, RB-05) but the sentence does not name Sana Petrov, whom the gold names. A harsh miss, the answer is not wrong. |
+| Q042 | The agent called `current_owner` only, so the answer is the current owner and never mentions that the runbook names Sana Petrov. Incomplete, not stale. The router calls `history` and shows both. |
+| Q045 | `recall` returned the handoff, the sentence says "from Support" and leaves out Priya Farrow, who handed it over. Incomplete. |
+| Q061, Q062, Q063 | The impact questions ask "and who must be told". The agent called `impact` and then `escalation_path` of the failing system, so Q061 and Q062 name Mateo Sandoval (owner of ledger-db itself) instead of the owners of the seven dependents that `impact` had just returned, and Q063 lists 4 of the 6 owners. This is the one real wrong-answer pattern: a plausible tool, the wrong reading of the question. With the model's own thinking on, Q061 and Q063 are answered correctly and Q065 is not. |
+
+Not in the table: the 12 new question types (departure, single source, what-if, bridges, successors, not in graph) arrive with generator 0.3.0; run the benchmark again after that merge.
 
 ## Limits
 
 - **Synthetic corpus.** One fictional company, 382 episodes written by a seeded script, with the failure modes (rumour, stale runbook, personal data, ownership transfer, dependency added later) put in on purpose. It shows that the mechanism works where it should; it does not predict a rate on real data.
-- **66 questions, one seed, one model, one run.** A question is 1.5 percentage points. The LLM paths ran once at temperature 0; there are no confidence intervals. Do not read differences of a few points as real.
+- **66 questions, one seed, one model, one run.** A question is 1.5 percentage points. Plain RAG gave byte-identical answers on two runs; the agent changed 2 of 66 sentences between two identical runs (Ollama is not bit-exact even at temperature 0 with a fixed seed) and no verdict. There are no confidence intervals. Do not read differences of a few points as real.
 - **The router was written against this question set.** Its rules match the corpus's question templates, so `honest-router` is close to an upper bound for questions phrased like these and says little about other phrasings. `honest-agent` is the less biased path: the model, not a regex, chooses the tool and fills the arguments.
-- **Name-level scoring.** A sentence can contain the right names and still be wrong (an owner attached to the wrong system), and a correct answer worded differently can miss a name. The `extra_names`, `stale_values` and `unsupported_values` fields keep the matched text for checking.
-- **Not every gold answer is complete.** Q020 (`ADRs accepted since 2026-09-14`) omits ADR-0013, accepted on 2026-09-17; an answer that includes it is counted as correct but the gold does not list it.
-- **Plain RAG is the plain kind.** See above.
+- **Some question types cannot be answered from 8 retrieved episodes at all.** "Who knows the most about X" is a count over 6 to 28 work items: for all 10 such questions the top 8 contain a gold source, for none of them all of them, and plain RAG scores 0 of 10 (21 of its 32 misses are plain refusals). The impact questions need a chain of up to four dependency hops. A better embedding does not fix those; aggregation is something retrieval does not do, which is the point of the graph and also why this is not a like-for-like contest of retrieval quality.
+- **Name-level scoring.** A sentence can contain the right names and still be wrong (an owner attached to the wrong system), and a correct answer worded differently can miss a name. `literal-rule correct` (no exemptions beyond the question's own names) and `sentence-only correct` (honest-memory answers without the source ids the tools returned) in the table bracket that choice: agent 72.7% to 90.9%, router 90.9% to 100%, plain RAG 43.9% to 51.5%. The `extra_names`, `stale_values` and `unsupported_values` fields keep the matched text.
+- **The corpus gold is not always complete.** Q020 (`ADRs accepted since 2026-09-14`) lists four ADRs; ADR-0013 was accepted on 2026-09-17 and the router and the agent both include it. The scorer counts an answer with ADR-0013 as correct, but the gold row should list it (reported to the corpus lane).
+- **Unsupported is 0 for every system.** The scorer only flags names, ids and dates that are not in the evidence or not in the corpus. Plain RAG did not invent any in this run; that does not mean it cannot.
 - **No LLM judge** also means no credit for a correct answer that avoids the expected names.
