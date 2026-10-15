@@ -23,7 +23,7 @@ from pathlib import Path
 from unittest import mock
 
 from .extract import RuleExtractor
-from .gate import GateResult, submit_fact, submit_handoff
+from .gate import GateResult, submit_end, submit_fact, submit_handoff
 from .store import Store, connect, epoch
 
 MENTIONED = ("Person", "Team", "System", "Decision", "Project")
@@ -58,6 +58,9 @@ def ingest_episode(store: Store, episode: dict, extractor: RuleExtractor) -> lis
         if cand.attrs.get("record") == "Handoff":
             results.append(submit_handoff(store, cand.subject, cand.object, cand.attrs["topic"], episode["text"],
                                           cand.source_ids, cand.valid_at))
+        elif cand.attrs.get("record") == "End":  # a last-day record: end the fact, no replacement
+            results.append(submit_end(store, cand.subject, cand.predicate, cand.object, cand.source_ids,
+                                      cand.valid_at, cand.proposer, cand.claim_episode))
         else:
             results.append(submit_fact(store, cand))
     return results
@@ -70,14 +73,18 @@ def read_episodes(corpus_dir: str | Path) -> list[dict]:
 
 
 def ingest_corpus(store: Store, corpus_dir: str | Path, reset: bool = False,
-                  extractor: RuleExtractor | None = None) -> dict:
-    """Replay <corpus_dir>/episodes.jsonl in time order. Returns counts per outcome and per reason."""
+                  extractor: RuleExtractor | None = None, until: str | None = None) -> dict:
+    """Replay <corpus_dir>/episodes.jsonl in time order. Returns counts per outcome and per reason.
+    `until` (ISO date or datetime) replays only the episodes dated before it: the memory as it stood then."""
     episodes = read_episodes(corpus_dir)
+    if until:
+        cut = epoch(until if "T" in until else until + "T00:00:00Z")
+        episodes = [e for e in episodes if epoch(e["ts"]) < cut]
     if reset:
         store.drop()
     store.ensure_schema()
     extractor = extractor or RuleExtractor()
-    outcomes: Counter = Counter(dict.fromkeys(("ACCEPT", "CONFIRM", "SUPERSEDE", "REJECT"), 0))
+    outcomes: Counter = Counter(dict.fromkeys(("ACCEPT", "CONFIRM", "SUPERSEDE", "CLOSE", "REJECT"), 0))
     reasons: Counter = Counter()
     started = time.perf_counter()
     for episode in episodes:
@@ -102,13 +109,14 @@ def main(argv=None) -> int:
     ap.add_argument("--corpus", required=True, help="directory with episodes.jsonl, e.g. data/corpus/42")
     ap.add_argument("--tenant", required=True, help="tenant name; the graph is hm_<tenant>")
     ap.add_argument("--reset", action="store_true", help="drop the tenant graph first")
+    ap.add_argument("--until", help="replay only episodes dated before this ISO date or datetime")
     ap.add_argument("--host", help="FalkorDB host (default: FALKORDB_HOST or localhost)")
     ap.add_argument("--port", type=int, help="FalkorDB port (default: FALKORDB_PORT or 6379)")
     args = ap.parse_args(argv)
     override = {k: str(v) for k, v in (("FALKORDB_HOST", args.host), ("FALKORDB_PORT", args.port)) if v is not None}
     with mock.patch.dict(os.environ, override):
         store = Store(connect(), args.tenant)
-    print(format_summary(ingest_corpus(store, args.corpus, reset=args.reset)))
+    print(format_summary(ingest_corpus(store, args.corpus, reset=args.reset, until=args.until)))
     return 0
 
 
