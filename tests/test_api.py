@@ -30,7 +30,7 @@ def test_health_pings_falkordb_and_reports_its_version(api):
     body = client.get("/health").json()
     assert body["status"] == "ok" and body["falkordb"]["ping"] is True
     assert re.fullmatch(r"\d+\.\d+\.\d+", body["falkordb"]["version"])
-    assert body["tools"] == 14 and body["write_gate"] is True and body["llm"]["configured"] is False
+    assert body["tools"] == 21 and body["write_gate"] is True  # 14 + the 7 departure tools (N5) and body["llm"]["configured"] is False
 
 
 def test_tool_list_carries_json_schemas(api):
@@ -173,6 +173,11 @@ def test_writes_need_the_token_when_one_is_set(api, monkeypatch):
     assert client.post(f"/v1/{tenant}/tools/current_owner", json={"system": "auth"}).status_code == 200  # reads stay open
     ep = {"id": "msg-9999", "ts": "2026-10-15T10:00:00Z", "channel": "chat", "author": "Luca Ostrander", "text": "hi"}
     assert client.post(f"/v1/{tenant}/episodes", json=ep).status_code == 401
+    plan = f"/v1/{tenant}/tools/handoff_plan"  # a read, until propose=true makes it write proposed handoffs
+    assert client.post(plan, json={"person": "Mateo Sandoval"}).status_code == 200
+    assert client.post(plan, json={"person": "Mateo Sandoval", "propose": True}).status_code == 401
+    assert client.post(plan, json={"person": "Mateo Sandoval", "propose": True},
+                       headers={"authorization": "Bearer s3cret"}).json()["rows"][0]["proposed"] > 0
 
 
 def test_static_panel_is_served_when_the_folder_exists(fx_store, tmp_path):

@@ -33,7 +33,7 @@ def test_every_tool_is_listed_with_our_schema(fx_store):
     server = build_server(fx_store.tenant, db=fx_store.db)
     listing = with_client(server, lambda c: c.list_tools())
     tools = {t.name: t for t in listing.tools}
-    assert list(tools) == list(T.TOOLS) and len(tools) == 14
+    assert list(tools) == list(T.TOOLS) and len(tools) == 21  # 14 + the 7 departure tools (N5)
     ours = {s["name"]: s for s in T.tool_schemas()}
     for name, tool in tools.items():
         assert tool.description == ours[name]["description"]
@@ -79,7 +79,11 @@ def test_writes_are_stamped_with_the_server_identity_and_can_be_switched_off(fx_
     assert row == [["agent:editor"]]
     readonly = build_server(fx_store.tenant, db=fx_store.db, readonly=True)
     names = [t.name for t in with_client(readonly, lambda c: c.list_tools()).tools]
-    assert "remember" not in names and "handoff" not in names and len(names) == 12
+    assert "remember" not in names and "handoff" not in names and len(names) == 19
+    refused = with_client(readonly, lambda c: c.call_tool("handoff_plan", {"person": "Mateo Sandoval", "propose": True}))
+    assert refused.is_error and "read-only" in refused.content[0].text
+    plan = with_client(readonly, lambda c: c.call_tool("handoff_plan", {"person": "Mateo Sandoval"}))
+    assert not plan.is_error and payload(plan)["outcome"] == "answered_with_path"
     assert Memory(fx_store.tenant).ctx.session.startswith("mcp-")
 
 
@@ -105,4 +109,4 @@ def test_stdio_server_started_the_way_a_client_config_starts_it(fx_store, port):
         return len(listing.tools), payload(res)
 
     n, body = with_client(params, run)
-    assert n == 14 and [r["person"] for r in body["rows"]] == ["Mateo Sandoval", "Pavel Hollis"]
+    assert n == 21 and [r["person"] for r in body["rows"]] == ["Mateo Sandoval", "Pavel Hollis"]

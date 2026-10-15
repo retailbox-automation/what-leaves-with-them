@@ -16,7 +16,7 @@ from honest_memory.store import Store, epoch
 
 PORTS = [int(p) for p in os.environ.get("HM_TEST_PORTS", "6379").split(",")]
 SEED = int(os.environ.get("CORPUS_TEST_SEED", "42"))
-REASONS = {"new_fact", "already_current", "newer_than_current", "new_handoff",
+REASONS = {"new_fact", "already_current", "newer_than_current", "new_handoff", "ended",
            "pii", "no_source", "conflicts_current", "older_than_current"}
 
 
@@ -90,6 +90,7 @@ def test_summary_counts_every_episode_and_gate_call(corpus, store, summary):
     assert summary["episodes"] == len(corpus["episodes"]) == store.ro("MATCH (e:Episode) RETURN count(e)")[0][0]
     assert sum(summary["outcomes"].values()) == summary["gate_calls"] == len(receipts(store))
     assert summary["outcomes"]["SUPERSEDE"] == 1  # billing-api changes owner once
+    assert summary["outcomes"]["CLOSE"] == 3  # N5: the last day ends one membership and two ownerships
 
 
 def test_gate_refuses_exactly_the_adversarial_claims(corpus, summary):
@@ -246,7 +247,7 @@ def test_entities_exist_only_because_a_document_declared_them(store):
                            f"WITH n, count(e) AS docs WHERE docs = 0 RETURN n.{key}")
         assert orphans == [], label
     counts = {label: store.ro(f"MATCH (n:{label}) RETURN count(n)")[0][0] for label in ("Person", "System", "Project")}
-    assert counts == {"Person": 14, "System": 9, "Project": 5}
+    assert counts == {"Person": 14, "System": 11, "Project": 5}  # + fernhill-sso and oncall-runbook (N5)
 
 
 def test_a_chat_message_cannot_create_entities(db, corpus):
