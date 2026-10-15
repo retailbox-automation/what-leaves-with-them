@@ -1,0 +1,68 @@
+"""Graph model shared by the write gate, the tools and the API.
+
+Current facts are typed edges (OWNS, MEMBER_OF, ...). When the gate closes a fact it
+deletes the typed edge and writes a WAS edge with the same endpoints, carrying the
+original predicate and both timestamps. Traversals over the present therefore never
+touch history (spike Q3: 1.3-1.5 ms vs 9-15 ms for a path filter on invalid_at).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+# Entity labels and the property that identifies each of them.
+ENTITY_KEYS = {
+    "Person": "name",
+    "Team": "name",
+    "System": "name",
+    "Decision": "id",
+    "Agent": "name",
+}
+
+# Record labels written by the memory itself.
+RECORD_KEYS = {
+    "Episode": "id",        # a source record: chat message, ticket, document
+    "GateDecision": "id",   # the receipt for every attempted write
+    "Finding": "id",        # something an agent concluded and was allowed to keep
+    "Handoff": "id",        # work passed from one agent or team to another
+}
+
+HISTORY_EDGE = "WAS"
+
+
+@dataclass(frozen=True)
+class Predicate:
+    name: str
+    subject: str
+    object: str
+    # "object": at most one current subject per object (one owner per system).
+    # "subject": at most one current object per subject (one team per person).
+    # None: many current edges may coexist (a person works on many systems).
+    functional: str | None = None
+
+
+PREDICATES = {
+    p.name: p
+    for p in (
+        Predicate("OWNS", "Person", "System", functional="object"),
+        Predicate("MEMBER_OF", "Person", "Team", functional="subject"),
+        Predicate("LEADS", "Person", "Team", functional="object"),
+        Predicate("WORKED_ON", "Person", "System"),
+        Predicate("DECIDED", "Person", "Decision"),
+        Predicate("SUPERSEDES", "Decision", "Decision"),
+        Predicate("DEPENDS_ON", "System", "System"),
+    )
+}
+
+# Predicates the gate refuses outright: they would store personal data (hackathon rule 6).
+FORBIDDEN_PREDICATES = {"HAS_PHONE", "HAS_ADDRESS", "HAS_EMAIL", "HAS_BIRTHDATE", "HAS_CARD"}
+
+# Range indexes created per tenant graph. Both FalkorDB 4.22 (Cloud free) and 6.0.x accept this form.
+INDEXES = [(label, key) for label, key in {**ENTITY_KEYS, **RECORD_KEYS}.items()]
+
+
+def graph_name(tenant: str) -> str:
+    """One FalkorDB graph per tenant: isolation is a different key, not a WHERE clause."""
+    if not tenant or not all(c.isalnum() or c in "-_" for c in tenant):
+        raise ValueError(f"tenant must be alphanumeric, '-' or '_': {tenant!r}")
+    return f"hm_{tenant}"

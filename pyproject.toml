@@ -5,7 +5,7 @@ description = "Agent memory on FalkorDB that checks every write before it become
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-dependencies = []
+dependencies = ["falkordb==1.8.0"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
