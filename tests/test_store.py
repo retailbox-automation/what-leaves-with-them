@@ -29,6 +29,9 @@ def test_graph_name_rejects_injection():
     assert graph_name("acme-1") == "hm_acme-1"
     with pytest.raises(ValueError):
         graph_name("a}) DETACH DELETE n //")
+    for look_alike in ("t\u0435nant", "t\u00e9nant", "\uff54enant", "a b", "", "t{x}"):  # Cyrillic e, accented e, full-width t
+        with pytest.raises(ValueError):
+            graph_name(look_alike)
 
 
 def test_close_fact_moves_edge_to_history(store):

@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import time
 from collections import Counter
 
 import pytest
@@ -263,6 +264,25 @@ def test_a_chat_message_cannot_create_entities(db, corpus):
         (res,) = ingest_episode(s, stranger, ex)
         assert (res.outcome, res.reasons) == ("REJECT", ["unknown_entity"])
         assert not s.find_entity("Person", "Zed Quux")
+    finally:
+        s.drop()
+
+
+def test_an_episode_dated_far_in_the_future_is_refused_and_leaves_no_trace(db, corpus):
+    s = Store(db, f"test_ingest_{os.getpid()}_future")
+    s.drop()
+    s.ensure_schema()
+    try:
+        ex = RuleExtractor()
+        ingest_episode(s, next(e for e in corpus["episodes"] if e["title"] == "Service catalog"), ex)
+        before = s.ro("MATCH (n) RETURN count(n)")[0][0]
+        runbook = {"id": "RB-99", "ts": "2030-01-01T00:00:00Z", "channel": "doc", "author": "Aiko Rademacher", "refs": [],
+                   "title": "Runbook: billing-api", "text": "Runbook: billing-api (public API).\nOwner: Aiko Rademacher (Growth)."}
+        with pytest.raises(ValueError, match="future"):
+            ingest_episode(s, runbook, ex)
+        assert s.ro("MATCH (n) RETURN count(n)")[0][0] == before  # not even the Episode node
+        soon = {**runbook, "id": "RB-98", "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 600))}
+        assert [r.outcome for r in ingest_episode(s, soon, ex)] == ["SUPERSEDE"]  # a few minutes of clock skew is allowed
     finally:
         s.drop()
 
