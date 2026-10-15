@@ -423,6 +423,8 @@
         y0: Math.min(...pts.map((p) => p.y)) - m, y1: Math.max(...pts.map((p) => p.y)) + m - 10 };
       full = extent;
     }
+    hovered = null;  // the camera moves the nodes away from a resting pointer: no name or tooltip left behind
+    hideTip();
     const r = freeRect();
     const whole = full ? Math.min(r.w / (full.x1 - full.x0), r.h / (full.y1 - full.y0)) : Infinity;
     const zoom = Math.min(r.w / (b.x1 - b.x0), r.h / (b.y1 - b.y0), whole * 1.6);
