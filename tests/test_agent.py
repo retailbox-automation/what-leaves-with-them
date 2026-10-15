@@ -5,9 +5,10 @@ import os
 import urllib.request
 from types import SimpleNamespace
 
-import httpx
-import openai
 import pytest
+
+httpx = pytest.importorskip("httpx")
+openai = pytest.importorskip("openai")
 
 from honest_memory import answer as A
 from honest_memory import agent as AG

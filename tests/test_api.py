@@ -3,9 +3,12 @@
 import re
 
 import pytest
-from fastapi.testclient import TestClient
 
-from honest_memory.api import create_app
+pytest.importorskip("fastapi")
+pytest.importorskip("httpx")
+from fastapi.testclient import TestClient  # noqa: E402
+
+from honest_memory.api import create_app  # noqa: E402
 from honest_memory.corpus.generator import build, write_corpus
 from honest_memory.ingest import ingest_corpus
 from tests.conftest import PORTS, make_store
