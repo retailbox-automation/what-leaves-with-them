@@ -29,7 +29,7 @@ Leaver: **Oskar Alvarez**. Resignation DOC-15 on 2026-09-25, last day DOC-16 on 
 ### 1. Depth 1: what a join would list
 
 **Q:** What leaves with Oskar Alvarez at depth 1?  
-**Tool:** `what_leaves(person='Oskar Alvarez', depth=1)` -> `answered_with_path`, 8 queries, 3.54 ms measured at the client
+**Tool:** `what_leaves(person='Oskar Alvarez', depth=1)` -> `answered_with_path`, 8 queries, 3.37 ms measured at the client
 
 > At depth 1, Oskar Alvarez: fernhill-sso (owner), oncall-runbook (owner), Platform (member).
 
@@ -53,7 +53,7 @@ Sources: DOC-14 (doc, Oskar Alvarez, 2026-08-25), RB-10 (doc, Oskar Alvarez, 202
 ### 2. Depth 4: what the graph adds
 
 **Q:** What leaves with Oskar Alvarez at depth 4?  
-**Tool:** `what_leaves(person='Oskar Alvarez', depth=4)` -> `answered_with_path`, 14 queries, 7.22 ms measured at the client
+**Tool:** `what_leaves(person='Oskar Alvarez', depth=4)` -> `answered_with_path`, 14 queries, 5.33 ms measured at the client
 
 > At depth 1, Oskar Alvarez: fernhill-sso (owner), oncall-runbook (owner), Platform (member). Within 4 hops, 7 more at risk: auth (2 hops via ADR-0016, owner Pavel Hollis, Platform); ledger-db (2 hops via ADR-0014, owner Mateo Sandoval, Payments); reporting (2 hops via ADR-0015, owner Aiko Rademacher, Growth); billing-api (3 hops via ADR-0014, owner Luca Ostrander, Platform); admin-console (4 hops via ADR-0014, owner Priya Farrow, Support); invoice-renderer (4 hops via ADR-0014, owner Viktor Hartwell, Payments); webhooks (4 hops via ADR-0014, owner Luca Ostrander, Platform).
 
@@ -84,7 +84,7 @@ Side by side (summary row): depth 1 = ['fernhill-sso', 'oncall-runbook', 'Platfo
 ### 3. What rests only on this person's records
 
 **Q:** Which decisions and systems rest only on records written by Oskar Alvarez?  
-**Tool:** `single_source(person='Oskar Alvarez')` -> `answered_with_path`, 7 queries, 3.72 ms measured at the client
+**Tool:** `single_source(person='Oskar Alvarez')` -> `answered_with_path`, 7 queries, 3.01 ms measured at the client
 
 > 2 items rest only on records written by Oskar Alvarez: fernhill-sso (DOC-14, DOC-17, TCK-0121, ...); oncall-runbook (RB-10, TCK-0126, msg-0222, ...). Checked, with records by others: ADR-0014 (Oskar Alvarez, Viktor Hartwell); ADR-0015 (Oskar Alvarez, Viktor Hartwell); ADR-0016 (Pavel Hollis).
 
@@ -109,9 +109,9 @@ Sources: DOC-14 (doc, Oskar Alvarez, 2026-08-25), DOC-17 (doc, Oskar Alvarez, 20
 ### 4. What-if: without them
 
 **Q:** What would nobody be connected to without Oskar Alvarez?  
-**Tool:** `without(person='Oskar Alvarez')` -> `answered_with_path`, 16 queries, 9.14 ms measured at the client
+**Tool:** `without(person='Oskar Alvarez')` -> `answered_with_path`, 16 queries, 6.5 ms measured at the client
 
-> Without Oskar Alvarez, nobody in the graph is connected to: fernhill-sso (through OWNS, WORKED_ON); oncall-runbook (through OWNS, WORKED_ON). Connected components on a temporary copy, 8.6 ms.
+> Without Oskar Alvarez, nobody in the graph is connected to: fernhill-sso (through OWNS, WORKED_ON); oncall-runbook (through OWNS, WORKED_ON). Connected components on a temporary copy, 6.3 ms.
 
 | items | connected_through |
 |---|---|
@@ -133,7 +133,7 @@ Sources: DOC-14 (doc, Oskar Alvarez, 2026-08-25), TCK-0121 (ticket, Oskar Alvare
 ### 5. Bridges between teams
 
 **Q:** Who is the strongest bridge between teams?  
-**Tool:** `bridges()` -> `answered_with_path`, 10 queries, 7.27 ms measured at the client
+**Tool:** `bridges()` -> `answered_with_path`, 10 queries, 5.07 ms measured at the client
 
 > Top bridges: Oskar Alvarez (score 290.28, links Growth, Payments, Platform, Support); Luca Ostrander (score 98.17, links Payments, Platform, Support); Viktor Hartwell (score 71.07, links Growth, Payments, Platform). Linked by one person only: Growth and Support by Oskar Alvarez.
 
@@ -156,7 +156,7 @@ Oskar Alvarez -WORKED_ON-> admin-console <-OWNS- Priya Farrow -MEMBER_OF-> Suppo
 ### 6. Successors (candidates only)
 
 **Q:** Who could take over from Oskar Alvarez?  
-**Tool:** `successors(person='Oskar Alvarez')` -> `answered_with_path`, 11 queries, 5.61 ms measured at the client
+**Tool:** `successors(person='Oskar Alvarez')` -> `answered_with_path`, 11 queries, 4.29 ms measured at the client
 
 > Candidates, not decisions. fernhill-sso: Lars Thorne (6 on auth), Pavel Hollis (4 on auth), Sana Petrov (2 on auth); oncall-runbook: no one in the graph has worked on this.
 
@@ -177,7 +177,7 @@ Sources: DOC-14 (doc, Oskar Alvarez, 2026-08-25), TCK-0007 (ticket, Lars Thorne,
 ### 7. The honest not-in-graph
 
 **Q:** Did Oskar Alvarez promise Fernhill Outfitters anything on a phone call after resigning?  
-**Tool:** `promises(person='Oskar Alvarez', to='Fernhill Outfitters')` -> `not_in_graph`, 5 queries, 1.72 ms measured at the client
+**Tool:** `promises(person='Oskar Alvarez', to='Fernhill Outfitters')` -> `not_in_graph`, 5 queries, 1.75 ms measured at the client
 
 > Not in the graph: no record written by or naming Oskar Alvarez after 2026-09-25 (their resignation, DOC-15) records a promise involving Fernhill Outfitters. Searched 10 records (4 chat records, 4 ticket records, 2 doc records). Phone calls and meetings are not channels this memory receives, so an unwritten promise cannot be in it.
 
@@ -191,13 +191,13 @@ Sources: DOC-15 (doc, Selma Marsh, 2026-09-25).
 ### 8. The handoff plan (read-only)
 
 **Q:** Make a handoff plan for Oskar Alvarez before 2026-10-09.  
-**Tool:** `handoff_plan(person='Oskar Alvarez', last_day='2026-10-09')` -> `answered_with_path`, 40 queries, 17.89 ms measured at the client
+**Tool:** `handoff_plan(person='Oskar Alvarez', last_day='2026-10-09')` -> `answered_with_path`, 40 queries, 15.57 ms measured at the client
 
-> 2 handoff lines for Oskar Alvarez before 2026-10-09. fernhill-sso: Ask Lars Thorne (candidate) to take over fernhill-sso; Oskar Alvarez walks them through it before 2026-10-09. oncall-runbook: No one in the graph has worked on oncall-runbook: Oskar Alvarez writes down how it works, and a lead names someone to pair with them before 2026-10-09. Questions to ask Oskar Alvarez: (1) Who besides Oskar Alvarez has read DOC-17 and can confirm what it says about fernhill-sso? (2) How is oncall-runbook run day to day, and where are the steps written down? Nobody else in the graph has worked on it: who should learn it before 2026-10-09? (3) Did you promise a customer or partner anything that is not written down, on a call or in a meeting, including for fernhill-sso? If so, write it in a ticket before 2026-10-09.
+> 2 handoff lines for Oskar Alvarez before 2026-10-09. fernhill-sso: Ask one of Lars Thorne, Pavel Hollis or Sana Petrov (candidates) to take over fernhill-sso; Oskar Alvarez walks them through it before 2026-10-09. oncall-runbook: No one in the graph has worked on oncall-runbook: Oskar Alvarez writes down how it works, and a lead names someone to pair with them before 2026-10-09. Questions to ask Oskar Alvarez: (1) Who besides Oskar Alvarez has read DOC-17 and can confirm what it says about fernhill-sso? (2) How is oncall-runbook run day to day, and where are the steps written down? Nobody else in the graph has worked on it: who should learn it before 2026-10-09? (3) Did you promise a customer or partner anything that is not written down, on a call or in a meeting, including for fernhill-sso? If so, write it in a ticket before 2026-10-09.
 
 | line | item | risk | candidates | review_with | action |
 |---|---|---|---|---|---|
-| 1 | fernhill-sso | owns (current), single source, nobody else is connected to it | Lars Thorne, Pavel Hollis, Sana Petrov |  | Ask Lars Thorne (candidate) to take over fernhill-sso; Oskar Alvarez walks them through it before 2026-10-09. |
+| 1 | fernhill-sso | owns (current), single source, nobody else is connected to it | Lars Thorne, Pavel Hollis, Sana Petrov |  | Ask one of Lars Thorne, Pavel Hollis or Sana Petrov (candidates) to take over fernhill-sso; Oskar Alvarez walks them through it before 2026-10-09. |
 | 2 | oncall-runbook | owns (current), single source, nobody else is connected to it |  |  | No one in the graph has worked on oncall-runbook: Oskar Alvarez writes down how it works, and a lead names someone to pair with them before 2026-10-09. |
 
 Paths (first 2):
@@ -221,7 +221,7 @@ Questions the plan asks the leaver now (after the handoff session):
 ### 9a. Before the last day: who owns the integration?
 
 **Q:** Who owns fernhill-sso now?  
-**Tool:** `current_owner(system='fernhill-sso')` -> `answered_with_path`, 5 queries, 2.35 ms measured at the client
+**Tool:** `current_owner(system='fernhill-sso')` -> `answered_with_path`, 5 queries, 2.01 ms measured at the client
 
 > Oskar Alvarez (Platform) owns fernhill-sso, since 2026-08-25. Sources: DOC-14.
 
@@ -243,7 +243,7 @@ Sources: DOC-14 (doc, Oskar Alvarez, 2026-08-25).
 ### 9c. After the last day: who owns the integration?
 
 **Q:** Who owns fernhill-sso now?  
-**Tool:** `current_owner(system='fernhill-sso')` -> `not_in_graph`, 5 queries, 4.21 ms measured at the client
+**Tool:** `current_owner(system='fernhill-sso')` -> `not_in_graph`, 5 queries, 1.7 ms measured at the client
 
 > fernhill-sso has no current owner. Last owner: Oskar Alvarez until 2026-10-09 (closed by GD-00225-e5a583243b, citing DOC-16). Nobody has been recorded as taking it over.
 
@@ -279,7 +279,7 @@ Then the handoff session arrives as two ordinary records, through the same write
 ### single_source as of 2026-09-30
 
 **Q:** Which decisions and systems rest only on records written by Oskar Alvarez as of 2026-09-30?  
-**Tool:** `single_source(person='Oskar Alvarez', as_of='2026-09-30')` -> `answered_with_path`, 6 queries, 3.01 ms measured at the client
+**Tool:** `single_source(person='Oskar Alvarez', as_of='2026-09-30')` -> `answered_with_path`, 6 queries, 2.88 ms measured at the client
 
 > 4 items rest only on records written by Oskar Alvarez as of 2026-09-30: ADR-0014 (ADR-0014); ADR-0015 (ADR-0015); fernhill-sso (DOC-14, TCK-0121, TCK-0123, ...); oncall-runbook (RB-10, TCK-0126, msg-0222, ...). Checked, with records by others: ADR-0016 (Pavel Hollis).
 
@@ -289,7 +289,7 @@ Sources: ADR-0014 (doc, Oskar Alvarez, 2026-09-02), ADR-0015 (doc, Oskar Alvarez
 ### single_source as of 2026-10-05
 
 **Q:** Which decisions and systems rest only on records written by Oskar Alvarez as of 2026-10-05?  
-**Tool:** `single_source(person='Oskar Alvarez', as_of='2026-10-05')` -> `answered_with_path`, 6 queries, 2.68 ms measured at the client
+**Tool:** `single_source(person='Oskar Alvarez', as_of='2026-10-05')` -> `answered_with_path`, 6 queries, 2.6 ms measured at the client
 
 > 2 items rest only on records written by Oskar Alvarez as of 2026-10-05: fernhill-sso (DOC-14, DOC-17, TCK-0121, ...); oncall-runbook (RB-10, TCK-0126, msg-0222, ...). Checked, with records by others: ADR-0014 (Oskar Alvarez, Viktor Hartwell); ADR-0015 (Oskar Alvarez, Viktor Hartwell); ADR-0016 (Pavel Hollis).
 
@@ -305,23 +305,23 @@ Sources: DOC-14 (doc, Oskar Alvarez, 2026-08-25), DOC-17 (doc, Oskar Alvarez, 20
 
 | step (ms of queries, measured at the client) | FalkorDB 6.0.2 | FalkorDB 4.22.0 |
 |---|---|---|
-| plan_before | 21.43 | 22.59 |
-| single_2026-09-30 | 3.01 | 4.02 |
-| single_2026-10-05 | 2.68 | 2.85 |
-| depth4_2026-09-30 | 5.59 | 8.12 |
-| depth4_2026-10-05 | 6.31 | 11.66 |
-| depth1 | 3.54 | 4.25 |
-| depth4 | 7.22 | 8.05 |
-| single | 3.72 | 4.42 |
-| without | 9.14 | 9.18 |
-| bridges | 7.27 | 11.38 |
-| successors | 5.61 | 5.75 |
-| promise | 1.72 | 2.13 |
-| plan | 17.89 | 20.58 |
-| owner_before | 2.35 | 3.14 |
-| owner_after | 4.21 | 2.69 |
-| without: wall time incl. building and dropping the temporary graph | 8.6 | 8.7 |
-| ingest until the last day, seconds | 1.48 | 1.4 |
+| plan_before | 16.61 | 20.08 |
+| single_2026-09-30 | 2.88 | 3.67 |
+| single_2026-10-05 | 2.6 | 3.31 |
+| depth4_2026-09-30 | 5.37 | 8.27 |
+| depth4_2026-10-05 | 5.09 | 6.19 |
+| depth1 | 3.37 | 4.16 |
+| depth4 | 5.33 | 7.89 |
+| single | 3.01 | 4.11 |
+| without | 6.5 | 11.41 |
+| bridges | 5.07 | 13.3 |
+| successors | 4.29 | 6.78 |
+| promise | 1.75 | 2.18 |
+| plan | 15.57 | 21.99 |
+| owner_before | 2.01 | 3.53 |
+| owner_after | 1.7 | 2.65 |
+| without: wall time incl. building and dropping the temporary graph | 6.3 | 10.9 |
+| ingest until the last day, seconds | 1.2 | 1.14 |
 
 - Bridges on FalkorDB 6.0.2: exact=True, runs=1: Oskar Alvarez 290.28; Luca Ostrander 98.17; Viktor Hartwell 71.07
 - Bridges on FalkorDB 4.22.0: exact=False, runs=8: Oskar Alvarez 230.53; Luca Ostrander 97.88; Viktor Hartwell 60.0

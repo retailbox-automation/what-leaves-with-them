@@ -98,6 +98,8 @@ The net effect on the first run's own answers, scored again: plain RAG 46.3% cor
 
 Plain RAG misses 12 of the 16 new questions, mostly by refusing (bridges, what-if, successors, handoff plan, depth 4) or by listing what the question rules out (Q071). The 10 `who_knows` questions: plain RAG answers none correctly (9 refusals, 1 wrong person).
 
+**After the product fixes (commit `caa9143`).** The misses above were then fixed in the product, not in the scorer: `handoff_plan` names every candidate in its action text (Q080), and the agent's system prompt got three general rules: say that an ended fact ended and when, name every item the rows list, and attach no relation the rows do not show (Q067, Q068, Q069, Q070). The rerun on the same 82 questions (`RESULTS.md`, FalkorDB 4.22): plain RAG 46.3% correct and 4.9% stale (unchanged), router 100.0% and 0.0%, agent 95.1% and 0.0%. Q069 and Q070 are still agent misses. These prompt rules were written after reading the agent's misses on this question set, so the agent's 95.1% is closer to an upper bound for this corpus than the 90.2% before the fixes; both runs are in the git history. `SENSITIVITY.md` still reflects commit `d3b7579`.
+
 ## Limits
 
 - **Synthetic corpus.** One fictional company, 403 episodes written by a seeded script, with the failure modes (rumour, stale runbook, personal data, ownership transfer, dependency added later, a person leaving) put in on purpose. It shows that the mechanism works where it should; it does not predict a rate on real data.

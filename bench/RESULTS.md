@@ -2,10 +2,10 @@
 
 Plain retrieval against honest-memory on the synthetic Quillfield Billing corpus: 82 questions, seed 42, corpus generator 0.3.0 (files sha256 `7fd55087879c`).
 
-- Run: 2026-10-15T20:54:55Z to 2026-10-15T20:57:39Z UTC (2.7 min), repo commit `d3b7579`.
+- Run: 2026-10-15T21:16:43Z to 2026-10-15T21:18:55Z UTC (2.2 min), repo commit `caa9143`.
 - Chat model, for plain RAG and for the agent: `gemma4:26b-a4b-it-qat` (25.2B, Q4_0, digest `2dd70431afed`), temperature 0, reasoning_effort `none`, via Ollama 0.40.4.
 - Embeddings for plain RAG: `embeddinggemma` (digest `85462619ee72`), top-k 8, units: whole episodes.
-- FalkorDB 4.22.0 on port 6393; ingest: 403 episodes, 226 gate decisions in 2.12 s (ACCEPT 108, CONFIRM 110, SUPERSEDE 1, CLOSE 3, REJECT 4).
+- FalkorDB 4.22.0 on port 6393; ingest: 403 episodes, 226 gate decisions in 1.4 s (ACCEPT 108, CONFIRM 110, SUPERSEDE 1, CLOSE 3, REJECT 4).
 
 How each column is decided is in `bench/score.py` (names and dates, no model as judge) and `bench/README.md`. **clean** = correct and not stale, unsupported or leaking personal data. **no answer** = the answer says the records or memory do not hold it (a miss, not a wrong answer).
 
@@ -13,12 +13,12 @@ How each column is decided is in `bench/score.py` (names and dates, no model as 
 
 | system | n | correct % | stale % | unsupported % | clean % | no answer % | median ms | literal-rule correct % | sentence-only correct % | personal data leaks |
 |---|---|---|---|---|---|---|---|---|---|---|
-| plain RAG | 82 | 46.3 | 4.9 | 0.0 | 46.3 | 36.6 | 513 | 39.0 | 46.3 | 2 |
-| honest-memory, router (no model) | 82 | 98.8 | 0.0 | 0.0 | 98.8 | 0.0 | 3 | 91.5 | 96.3 | 0 |
-| honest-memory, LLM agent | 82 | 90.2 | 0.0 | 0.0 | 90.2 | 0.0 | 750 | 73.2 | 85.4 | 0 |
+| plain RAG | 82 | 46.3 | 4.9 | 0.0 | 46.3 | 36.6 | 512 | 39.0 | 46.3 | 2 |
+| honest-memory, router (no model) | 82 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 | 92.7 | 97.6 | 0 |
+| honest-memory, LLM agent | 82 | 95.1 | 0.0 | 0.0 | 95.1 | 1.2 | 784 | 79.3 | 90.2 | 0 |
 
 - Plain RAG retrieval: a gold source record was among the top-k for 63 of 80 questions that have sources, and all of them for 39.
-- Agent: 80 of 82 answers are the model's own sentence (it passed the check against the rows); the rest are the template sentence built from the rows. 0 questions fell back to the router because the model called no tool; 0 runs recorded an error.
+- Agent: 79 of 82 answers are the model's own sentence (it passed the check against the rows); the rest are the template sentence built from the rows. 0 questions fell back to the router because the model called no tool; 0 runs recorded an error.
 
 ## By question type
 
@@ -26,64 +26,64 @@ How each column is decided is in `bench/score.py` (names and dates, no model as 
 
 | type | n | correct % | stale % | unsupported % | clean % | no answer % | median ms |
 |---|---|---|---|---|---|---|---|
-| adversarial | 4 | 25.0 | 25.0 | 0.0 | 25.0 | 0.0 | 508 |
-| bridges | 2 | 0.0 | 0.0 | 0.0 | 0.0 | 100.0 | 643 |
-| current_state | 24 | 79.2 | 0.0 | 0.0 | 79.2 | 20.8 | 421 |
-| departure_depth1 | 2 | 50.0 | 50.0 | 0.0 | 50.0 | 0.0 | 809 |
-| departure_depth4 | 2 | 0.0 | 0.0 | 0.0 | 0.0 | 50.0 | 761 |
-| handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 446 |
-| handoff_plan | 1 | 0.0 | 0.0 | 0.0 | 0.0 | 100.0 | 798 |
-| impact | 6 | 16.7 | 33.3 | 0.0 | 16.7 | 33.3 | 608 |
-| not_in_graph | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 730 |
-| provenance | 9 | 55.6 | 0.0 | 0.0 | 55.6 | 22.2 | 479 |
-| single_source | 4 | 25.0 | 0.0 | 0.0 | 25.0 | 25.0 | 931 |
-| state_at_time | 7 | 57.1 | 0.0 | 0.0 | 57.1 | 42.9 | 582 |
-| successors | 1 | 0.0 | 0.0 | 0.0 | 0.0 | 100.0 | 532 |
-| what_changed_since | 6 | 66.7 | 0.0 | 0.0 | 66.7 | 16.7 | 918 |
-| what_if | 2 | 0.0 | 0.0 | 0.0 | 0.0 | 100.0 | 951 |
-| who_knows | 10 | 0.0 | 0.0 | 0.0 | 0.0 | 90.0 | 425 |
+| adversarial | 4 | 25.0 | 25.0 | 0.0 | 25.0 | 0.0 | 509 |
+| bridges | 2 | 0.0 | 0.0 | 0.0 | 0.0 | 100.0 | 646 |
+| current_state | 24 | 79.2 | 0.0 | 0.0 | 79.2 | 20.8 | 409 |
+| departure_depth1 | 2 | 50.0 | 50.0 | 0.0 | 50.0 | 0.0 | 791 |
+| departure_depth4 | 2 | 0.0 | 0.0 | 0.0 | 0.0 | 50.0 | 750 |
+| handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 447 |
+| handoff_plan | 1 | 0.0 | 0.0 | 0.0 | 0.0 | 100.0 | 812 |
+| impact | 6 | 16.7 | 33.3 | 0.0 | 16.7 | 33.3 | 601 |
+| not_in_graph | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 707 |
+| provenance | 9 | 55.6 | 0.0 | 0.0 | 55.6 | 22.2 | 478 |
+| single_source | 4 | 25.0 | 0.0 | 0.0 | 25.0 | 25.0 | 951 |
+| state_at_time | 7 | 57.1 | 0.0 | 0.0 | 57.1 | 42.9 | 586 |
+| successors | 1 | 0.0 | 0.0 | 0.0 | 0.0 | 100.0 | 524 |
+| what_changed_since | 6 | 66.7 | 0.0 | 0.0 | 66.7 | 16.7 | 880 |
+| what_if | 2 | 0.0 | 0.0 | 0.0 | 0.0 | 100.0 | 976 |
+| who_knows | 10 | 0.0 | 0.0 | 0.0 | 0.0 | 90.0 | 408 |
 
 ### honest-memory, router (no model)
 
 | type | n | correct % | stale % | unsupported % | clean % | no answer % | median ms |
 |---|---|---|---|---|---|---|---|
-| adversarial | 4 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
-| bridges | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 14 |
-| current_state | 24 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
-| departure_depth1 | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 8 |
-| departure_depth4 | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 12 |
+| adversarial | 4 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1 |
+| bridges | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 12 |
+| current_state | 24 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1 |
+| departure_depth1 | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 6 |
+| departure_depth4 | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 8 |
 | handoff | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 4 |
-| handoff_plan | 1 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 33 |
+| handoff_plan | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 24 |
 | impact | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 3 |
-| not_in_graph | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 4 |
-| provenance | 9 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 3 |
-| single_source | 4 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 5 |
+| not_in_graph | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
+| provenance | 9 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
+| single_source | 4 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 4 |
 | state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
 | successors | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 8 |
-| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 4 |
-| what_if | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 12 |
-| who_knows | 10 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 2 |
+| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 3 |
+| what_if | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 10 |
+| who_knows | 10 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1 |
 
 ### honest-memory, LLM agent
 
 | type | n | correct % | stale % | unsupported % | clean % | no answer % | median ms |
 |---|---|---|---|---|---|---|---|
-| adversarial | 4 | 75.0 | 0.0 | 0.0 | 75.0 | 0.0 | 892 |
-| bridges | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 633 |
-| current_state | 24 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 529 |
-| departure_depth1 | 2 | 50.0 | 0.0 | 0.0 | 50.0 | 0.0 | 785 |
-| departure_depth4 | 2 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 1,376 |
-| handoff | 1 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 1,525 |
-| handoff_plan | 1 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 2,921 |
-| impact | 6 | 83.3 | 0.0 | 0.0 | 83.3 | 0.0 | 1,452 |
-| not_in_graph | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 716 |
-| provenance | 9 | 88.9 | 0.0 | 0.0 | 88.9 | 0.0 | 784 |
-| single_source | 4 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1,208 |
-| state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 742 |
-| successors | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 850 |
-| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1,251 |
-| what_if | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 728 |
-| who_knows | 10 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 700 |
+| adversarial | 4 | 75.0 | 0.0 | 0.0 | 75.0 | 0.0 | 942 |
+| bridges | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 622 |
+| current_state | 24 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 515 |
+| departure_depth1 | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1,127 |
+| departure_depth4 | 2 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 1,585 |
+| handoff | 1 | 0.0 | 0.0 | 0.0 | 0.0 | 100.0 | 3,260 |
+| handoff_plan | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 3,126 |
+| impact | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1,686 |
+| not_in_graph | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 793 |
+| provenance | 9 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 878 |
+| single_source | 4 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1,395 |
+| state_at_time | 7 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 779 |
+| successors | 1 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1,067 |
+| what_changed_since | 6 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 1,337 |
+| what_if | 2 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 696 |
+| who_knows | 10 | 100.0 | 0.0 | 0.0 | 100.0 | 0.0 | 769 |
 
 ## Questions each system got wrong
 
@@ -138,24 +138,16 @@ Every row below is `correct = false`; the full verdicts (matched names, stale an
 | Q079 | successors | Who could take over from Oskar Alvarez? | Candidates, not decisions. fernhill-sso (by work on auth): Lars Thorne (6), Pavel Hollis … | The records do not contain information regarding a successor for Oskar Alvarez (DOC-16). | missing Lars Thorne, Pavel Hollis, Sana Petrov, fernhill-sso, oncall-runbook |
 | Q080 | handoff_plan | Make a handoff plan for Oskar Alvarez before 2026-10-09. | 2 lines: fernhill-sso (candidates Lars Thorne, Pavel Hollis, Sana Petrov); oncall-runbook… | The records do not contain a handoff plan for Oskar Alvarez before 2026-10-09. (DOC-15, DOC-16, DOC-17) | missing Lars Thorne, Pavel Hollis, Sana Petrov, fernhill-sso, oncall-runbook |
 
-### honest-memory, router (no model): 1 of 82
+### honest-memory, router (no model): 0 of 82
+
+### honest-memory, LLM agent: 4 of 82
 
 | id | type | question | gold | answer | why |
 |---|---|---|---|---|---|
-| Q080 | handoff_plan | Make a handoff plan for Oskar Alvarez before 2026-10-09. | 2 lines: fernhill-sso (candidates Lars Thorne, Pavel Hollis, Sana Petrov); oncall-runbook… | 2 handoff lines for Oskar Alvarez before 2026-10-09. fernhill-sso: Ask Lars Thorne (candidate) to take over fernhill-sso; Oskar Alvarez walks them through it before 2026… | missing Pavel Hollis, Sana Petrov |
-
-### honest-memory, LLM agent: 8 of 82
-
-| id | type | question | gold | answer | why |
-|---|---|---|---|---|---|
-| Q034 | provenance | Where was billing-api ownership recorded before the transfer? | The service catalog and the billing-api runbook, both naming Sana Petrov. | Before the transfer, billing-api ownership was recorded in DOC-01 (Service catalog) and RB-05 (Runbook: billing-api). | missing Sana Petrov |
-| Q042 | adversarial | According to the billing-api runbook, who owns billing-api, and is th… | The runbook names Sana Petrov, but it is from week 2 and stale: ownership moved to Luca O… | Luca Ostrander owns billing-api as of 2026-09-22. | missing Sana Petrov |
-| Q045 | handoff | Who received the duplicate invoice emails incident from Support? | Selma Marsh (Platform on-call), handed over by Priya Farrow in TCK-0077. | Selma Marsh received the duplicate invoice emails incident from Support. | missing Priya Farrow |
-| Q063 | impact | What depends on billing-api within 4 hops, and who must be told? | Within 4 hops: admin-console (owner Priya Farrow, Support, 1 hop); invoice-renderer (owne… | The systems that depend on billing-api within 4 hops are admin-console, invoice-renderer, reporting, webhooks, notifications, and status-page; the people who must be tol… | missing Aiko Rademacher, Priya Farrow, Tomas Kessler, Viktor Hartwell |
-| Q068 | departure_depth1 | What does Oskar Alvarez own, lead or belong to? | Nothing now: fernhill-sso, oncall-runbook (owner), the Platform team (member) ended on 20… | Oskar Alvarez owned fernhill-sso and oncall-runbook and was a member of the Platform team. | no refusal |
-| Q069 | departure_depth4 | What leaves with Oskar Alvarez at depth 4? | Within 4 hops: auth (ADR-0016, shared with Pavel Hollis, owner Pavel Hollis, Platform, 2 … | At depth 4, Oskar Alvarez's decisions and ownership impact the following systems: admin-console, invoice-renderer, and webhooks. | missing Aiko Rademacher, Luca Ostrander, Mateo Sandoval, Pavel Hollis, Platform, Priya Farrow, Viktor Hartwell, auth, billing-api, fernhill-sso, ledger-db, oncall-runbook, reporting |
-| Q070 | departure_depth4 | Which decisions of Oskar Alvarez govern systems that other teams own? | ADR-0014 governs ledger-db (owner Mateo Sandoval, Payments); ADR-0015 governs reporting (… | Oskar Alvarez's decisions that govern systems owned by other teams are ADR-0014, which governs ledger-db, reporting, admin-console, and invoice-renderer, and ADR-0015, w… | missing Aiko Rademacher, Mateo Sandoval |
-| Q080 | handoff_plan | Make a handoff plan for Oskar Alvarez before 2026-10-09. | 2 lines: fernhill-sso (candidates Lars Thorne, Pavel Hollis, Sana Petrov); oncall-runbook… | Here is the proposed handoff plan for Oskar Alvarez before 2026-10-09: **Handoff Items:** * **fernhill-sso (System):** Ask Lars Thorne (candidate) to take over fernhill-… | missing Pavel Hollis, Sana Petrov |
+| Q042 | adversarial | According to the billing-api runbook, who owns billing-api, and is th… | The runbook names Sana Petrov, but it is from week 2 and stale: ownership moved to Luca O… | Luca Ostrander owns billing-api since 2026-09-22. | missing Sana Petrov |
+| Q045 | handoff | Who received the duplicate invoice emails incident from Support? | Selma Marsh (Platform on-call), handed over by Priya Farrow in TCK-0077. | I am sorry, but I cannot find any record of a "duplicate invoice emails incident" in the memory graph. | missing Priya Farrow, Selma Marsh |
+| Q069 | departure_depth4 | What leaves with Oskar Alvarez at depth 4? | Within 4 hops: auth (ADR-0016, shared with Pavel Hollis, owner Pavel Hollis, Platform, 2 … | Oskar Alvarez's ownership of fernhill-sso, oncall-runbook, and membership in Platform ended on 2026-10-09. | missing Aiko Rademacher, Luca Ostrander, Mateo Sandoval, Pavel Hollis, Priya Farrow, Viktor Hartwell, admin-console, auth, billing-api, invoice-renderer, ledger-db, reporting, webhooks |
+| Q070 | departure_depth4 | Which decisions of Oskar Alvarez govern systems that other teams own? | ADR-0014 governs ledger-db (owner Mateo Sandoval, Payments); ADR-0015 governs reporting (… | ADR-0014 governs ledger-db, reporting, billing-api, admin-console, and invoice-renderer, while ADR-0015 governs reporting. | missing Aiko Rademacher, Mateo Sandoval |
 
 ## Stale and unsupported answers
 
