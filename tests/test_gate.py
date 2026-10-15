@@ -173,6 +173,17 @@ def test_detect_pii_names_the_kind():
     assert detect_pii("card 4111 1111 1111 1111") == ["card"]
 
 
+@pytest.mark.parametrize("value, kind", [("4111.1111.1111.1111", "card"), ("ana [at] example [dot] com", "email"),
+                                         ("ana(at)example.com", "email"), ("ANA {AT} EXAMPLE.COM", "email")])
+def test_dotted_cards_and_spelled_out_emails_are_personal_data(value, kind):
+    assert detect_pii(value) == [kind]
+
+
+@pytest.mark.parametrize("value", ["3.14159265358979323", "10.2.3.4567", "values[at] = 3", "array(at) is a method.", "4111.1111.1111.1112"])
+def test_decimals_versions_and_code_are_not_personal_data(value):
+    assert detect_pii(value) == []
+
+
 # ---- check 3: a source is required --------------------------------------------------------------
 def test_no_source_is_refused(store):
     res = submit_fact(store, cand(source_ids=[]))
@@ -442,6 +453,14 @@ def test_finding_with_personal_data_is_refused_and_not_echoed(store):
     assert count(store, "MATCH (a:Agent) RETURN count(a)") == 0  # a refusal creates nothing but its receipt
 
 
+def test_personal_data_in_the_session_label_or_agent_name_is_refused(store):
+    for kw in ({"session": "555.015.9999"}, {"agent": "agent:555-015-9999"}):
+        res = finding(store, **kw)
+        assert (res.outcome, res.reasons) == ("REJECT", ["pii"])
+    dump = json.dumps(store.ro("MATCH (n) RETURN properties(n)"))
+    assert "555.015.9999" not in dump and "555-015-9999" not in dump and count(store, "MATCH (a:Agent) RETURN count(a)") == 0
+
+
 def test_finding_time_must_parse(store):
     assert finding(store, at="not a time").reasons == ["bad_time"]
 
@@ -480,6 +499,13 @@ def test_handoff_refusals(store):
     assert bad.reasons == ["pii"] and "example.com" not in json.dumps(store.ro("MATCH (g:GateDecision) RETURN properties(g)"))
     assert count(store, "MATCH (h:Handoff) RETURN count(h)") == 0
     assert not store.find_entity("Agent", "agent:support-bot")  # refused handoffs do not create agents
+
+
+def test_personal_data_in_a_party_name_is_refused(store):
+    res = handoff(store, from_="agent:555-015-9999")
+    assert (res.outcome, res.reasons) == ("REJECT", ["pii"])
+    assert "555-015-9999" not in json.dumps(store.ro("MATCH (n) RETURN properties(n)"))
+    assert count(store, "MATCH (a:Agent) RETURN count(a)") == 0
 
 
 def test_agent_names_are_created_only_with_the_agent_prefix(store):

@@ -63,10 +63,12 @@ class GateResult:
 
 # ---- personal data -------------------------------------------------------------------------------------
 
-_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_EMAIL = re.compile(  # name@host.tld, or the same spelled "name [at] host [dot] tld"
+    r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
+    r"|[\w.+-]+\s*[\[({]\s*at\s*[\])}]\s*[\w-]+(?:\s*[\[({]?\s*(?:dot|\.)\s*[\])}]?\s*[\w-]+)+", re.IGNORECASE)
 _DATETIME = re.compile(r"\d{4}-\d\d-\d\d(?:[T ]\d\d:\d\d(?::\d\d)?Z?)?|\d\d:\d\d(?::\d\d)?")
 _NUMBER_RUN = re.compile(r"(?<![\w-])\+?\d[\d\s().-]{5,}\d(?![\w-])")
-_CARD_RUN = re.compile(r"(?<![\w-])\d(?:[ -]?\d){12,18}(?![\w-])")
+_CARD_RUN = re.compile(r"(?<![\w-])\d(?:[ -]?\d){12,18}(?![\w-])|(?<![\w-])\d{4}(?:\.\d{4}){3}(?![\w-])")
 _NANP = re.compile(r"1?[2-9]\d{2}[2-9]\d{6}")
 _STREET = re.compile(
     r"(?<![\w-])\d{1,5}\s+(?:[A-Z][A-Za-z'’-]*\s+){1,3}"
@@ -328,7 +330,8 @@ def _refuse_record(store: Store, *, reasons: list[str], agent: str, predicate: s
     receipt_id = _receipt_id(seq, agent, predicate, obj, at, source_ids)
     _write_receipt(store, receipt_id,
                    {"id": receipt_id, "ts": at, "outcome": REJECT, "reasons": reasons, "predicate": predicate,
-                    "subject": agent, "object": obj, "proposer": agent, "valid_at": at, "source_ids": source_ids},
+                    "subject": _redact(agent), "object": obj, "proposer": _redact(agent), "valid_at": at,
+                    "source_ids": source_ids},
                    found, about)
     return GateResult(REJECT, reasons, receipt_id, False)
 
@@ -370,7 +373,7 @@ def submit_finding(store: Store, agent: str, session: str, text: str, about: lis
     """Keep what an agent concluded, if it is about known entities, rests on a known source and holds no
     personal data. Writes (Agent)-[:WROTE]->(Finding), (Finding)-[:ABOUT]->(entity), (Finding)-[:DERIVED_FROM]->(source)."""
     ids = _dedupe(source_ids)
-    reasons, when, found = _record_checks(store, text, ids, at)
+    reasons, when, found = _record_checks(store, f"{text}\n{agent}\n{session}", ids, at)
     names = _Names(store)
     resolved = [(names.label(n, ENTITY_KEYS), n) for n in about]
     known = [(l, n) for l, n in resolved if l]
@@ -399,7 +402,7 @@ def submit_handoff(store: Store, from_: str, to: str, topic: str, note: str, sou
     """Pass work on. Parties are Agents (names starting with "agent:" are created on demand), Teams or Persons.
     Writes a Handoff node with FROM / TO / CITES edges."""
     ids = _dedupe(source_ids)
-    reasons, when, found = _record_checks(store, f"{topic}\n{note}", ids, at)
+    reasons, when, found = _record_checks(store, f"{topic}\n{note}\n{from_}\n{to}", ids, at)
     names = _Names(store)
 
     def party(name: str, order) -> tuple[str, str] | None:
