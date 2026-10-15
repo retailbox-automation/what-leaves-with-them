@@ -7,6 +7,7 @@ The tenant name is unique per run and is dropped at the end, so a run never touc
 from __future__ import annotations
 
 import os
+import time
 import uuid
 
 from falkordb import FalkorDB
@@ -41,13 +42,24 @@ def _row(run: AgentRun) -> dict:
     return out
 
 
+def _connect(host: str, port: int, tries: int = 5) -> FalkorDB:
+    """The FalkorDB here is shared with other work and can be busy for a while: a generous socket timeout, and a retry."""
+    for attempt in range(tries):
+        try:
+            return FalkorDB(host=host, port=port, socket_timeout=120, socket_connect_timeout=30)
+        except Exception:
+            if attempt == tries - 1:
+                raise
+            time.sleep(10 * (attempt + 1))
+
+
 class Honest:
     """One tenant graph on one FalkorDB, filled through the gate, queried by the router and by the agent."""
 
     def __init__(self, corpus: Corpus, host: str, port: int, model: str, base_url: str = BASE_URL,
                  keep: bool = False, reasoning: str | None = None):
         self.corpus, self.keep = corpus, keep
-        self.db = FalkorDB(host=host, port=port, socket_timeout=30, socket_connect_timeout=10)
+        self.db = _connect(host, port)
         self.tenant = f"bench_{uuid.uuid4().hex[:10]}"
         self.store = Store(self.db, self.tenant)
         self.router = Agent(self.store, name="agent:bench-router", config=AgentConfig(model=None))
