@@ -103,6 +103,16 @@ def test_attrs_become_edge_properties_but_cannot_override_gate_fields(store):
     assert fact["role"] == "Lead" and fact["gate_id"] == res.receipt_id and fact["source_ids"] == ["DOC-01"]
 
 
+def test_attrs_outside_the_vocabulary_or_with_nested_values_are_refused_before_anything_is_written(store):
+    submit_fact(store, cand())
+    for attrs in ({"labels": ["Admin"]}, {":Admin": "yes"}, {"role": {"x": 1}}, {"role": ["a", {"b": 1}]}, {"note": "x" * 301},
+                  {"role": None}, {"meta": {"label": "Admin"}}):
+        res = submit_fact(store, adr9_owner(attrs=attrs))  # would supersede Ana
+        assert (res.outcome, res.reasons, res.written) == ("REJECT", ["bad_attrs"], False)
+    assert [f["subject"] for f in store.current_facts("OWNS", obj="billing-api")] == ["Ana"]  # nobody was closed
+    assert count(store, "MATCH ()-[h:WAS]->() RETURN count(h)") == 0
+
+
 def test_leads_accepts_a_team_or_a_project(store):
     team = submit_fact(store, cand(predicate="LEADS", object="Payments", source_ids=["DOC-06"]))
     project = submit_fact(store, cand(predicate="LEADS", object="Ledger Hardening", source_ids=["DOC-08"]))

@@ -38,6 +38,8 @@ REDACTED = "[redacted]"
 REDACTED_PII = "[redacted:pii]"
 SNIPPET = 200
 MAX_NAME = 200  # longest subject or object the gate will look at; receipts keep at most SNIPPET characters of a name
+ATTR_KEYS = frozenset({"role", "title", "note"})  # the only extra properties a fact edge may carry, all short strings
+MAX_ATTR = 300
 AGENT_ID = re.compile(r"agent:[a-z0-9][a-z0-9_-]{0,63}")  # the shape the API and the tools accept
 
 
@@ -119,6 +121,12 @@ def detect_pii(text: str) -> list[str]:
 def _redact(value: str) -> str:
     kinds = detect_pii(value)
     return f"[redacted:{'+'.join(kinds)}]" if kinds else value
+
+
+def _bad_attrs(attrs: dict) -> bool:
+    """Gate-owned keys are ignored later; any other key must be in ATTR_KEYS with a short string value."""
+    return any(k not in RESERVED and (k not in ATTR_KEYS or not isinstance(v, str) or len(v) > MAX_ATTR)
+               for k, v in attrs.items())
 
 
 def _pii_in(cand: Candidate) -> bool:
@@ -204,6 +212,8 @@ def _judge(store: Store, cand: Candidate, episodes: dict, names: _Names) -> _Ver
     # 2
     if _pii_in(cand):
         return refuse("pii")
+    if _bad_attrs(cand.attrs):
+        return refuse("bad_attrs")
     # 3
     if not cand.source_ids:
         return refuse("no_source", *(["conflicts_current"] if _conflicts(store, p, cand.subject, cand.object) else []))
