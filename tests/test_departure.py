@@ -317,3 +317,13 @@ def test_current_owner_of_an_orphaned_system_names_the_last_owner_and_the_closin
         L, "2026-10-09T22:00:00Z", "CLOSE", ["DOC-16"])
     assert ans.note.startswith("fernhill-sso has no current owner. Last owner: Oskar Alvarez until 2026-10-09")
     assert [r.outcome for r in ans.receipts] == ["CLOSE"]
+
+
+def test_handoff_action_names_every_candidate():
+    from honest_memory.departure import _action
+    many = {"item": "fernhill-sso", "item_kind": "system",
+            "candidates": [{"person": "Lars Thorne"}, {"person": "Pavel Hollis"}, {"person": "Sana Petrov"}]}
+    text = _action("Oskar Alvarez", many, "before 2026-10-09")
+    assert all(n in text for n in ("Lars Thorne", "Pavel Hollis", "Sana Petrov")) and "(candidates)" in text
+    one = {**many, "candidates": [{"person": "Lars Thorne"}]}
+    assert _action("Oskar Alvarez", one, "before 2026-10-09").startswith("Ask Lars Thorne (candidate) to take over")

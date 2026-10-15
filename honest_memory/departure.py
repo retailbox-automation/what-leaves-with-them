@@ -567,8 +567,11 @@ def _action(person: str, line: dict, by: str) -> str:
         return f"Ask {person} to write down why {item} was decided{review} {by}{hold}."
     if line["item_kind"] in ("team", "project"):
         return f"Name a new lead for {item} {by}."
-    if names:
+    if len(names) == 1:
         return f"Ask {names[0]} (candidate) to take over {item}; {person} walks them through it {by}."
+    if names:
+        return (f"Ask one of {', '.join(names[:-1])} or {names[-1]} (candidates) to take over {item}; "
+                f"{person} walks them through it {by}.")
     return (f"No one in the graph has worked on {item}: {person} writes down how it works, and a lead names someone "
             f"to pair with them {by}.")
 
