@@ -78,6 +78,8 @@
     },
 
     async recorded(key, person) {
+      // the recorded answers are Quillfield's (scripts/capture_panel_fixtures.py); another tenant has none
+      if (TENANT !== 'quillfield') throw new Error(`no recorded answers for tenant ${TENANT}`);
       const book = await this.file(person ? `people/${slug(person)}.json` : 'common.json');
       if (!(key in book)) throw new Error(`no recorded answer for ${key}`);
       return { body: book[key], roundtrip: null };
@@ -91,6 +93,7 @@
           try { return await live(); } catch (err) {
             const rec = await this.recorded(key, person).catch(() => null);
             if (!rec) throw err;
+            this.fellBack = true;
             setStatus('The live API did not answer; showing recorded answers.');
             return rec;
           }
@@ -1530,7 +1533,7 @@
         res.roundtrip !== null && res.roundtrip !== undefined ? `${res.roundtrip} ms round trip` : 'recorded'].join(' · '),
       queries: (res.body.trace || []).map((t) => ({ text: t.query, ms: t.ms })),
     }]);
-    setStatus(api.source === 'fixtures' ? 'recorded answers' : '');
+    if (!api.fellBack) setStatus(api.source === 'fixtures' ? 'recorded answers' : '');
     toLanding(false);
     // read-only hooks for scripted walkthroughs (screenshots, the demo video): where a node is, which phase is on
     window.panel = Object.freeze({
