@@ -1,5 +1,7 @@
 # What Leaves With Them
 
+[![tests](https://github.com/retailbox-automation/what-leaves-with-them/actions/workflows/tests.yml/badge.svg)](https://github.com/retailbox-automation/what-leaves-with-them/actions/workflows/tests.yml) on FalkorDB 6.0.2 and 4.22 · MIT
+
 When someone leaves a company, the agent shows what leaves with them and builds the handoff, every line with a graph path back to its source records. It walks a company graph in FalkorDB from the person to the decisions they made, the systems those decisions constrain, the people and teams who own those systems, and the things nobody else is connected to once the person is gone.
 
 In a 2022 survey of 1,000 IT managers at large organizations in the UK and US, 67% said they were concerned about losing knowledge and expertise when people leave, and 64% said their organization had already lost knowledge that way ([Sinequa press release, August 2022](https://www.sinequa.com/company/press/sinequa-finds-over-two-thirds-of-it-leaders-are-concerned-by-organizational-knowledge-loss-from-employee-turnover/)). We built it because people left our own team and took knowledge with them.
