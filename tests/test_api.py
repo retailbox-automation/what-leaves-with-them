@@ -252,3 +252,22 @@ def test_ask_answers_corpus_questions_with_no_model(ingested):
                              ("Is Growth the current owner of billing-api?", "refused")):
         body = client.post(f"/v1/{tenant}/ask", json={"question": question}).json()
         assert expect in body["sentence"], body["sentence"]
+
+
+def test_without_falkordb_nothing_is_answered(monkeypatch):
+    """FalkorDB is the only source: with the database unreachable, health is down and every tool call is a 503 with
+    no rows, so no answer can come from anywhere else (no cache, no model, no fallback)."""
+    for name in ("HM_LLM_MODEL", "HM_WRITE_TOKEN", "HM_TRUST_PROXY", "FALKORDB_USERNAME", "FALKORDB_PASSWORD"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("FALKORDB_HOST", "127.0.0.1")
+    monkeypatch.setenv("FALKORDB_PORT", "1")  # nothing listens on port 1; the app connects lazily, as in production
+    monkeypatch.setenv("FALKORDB_SOCKET_TIMEOUT", "1")
+    client = TestClient(create_app(None, web_dir="/nonexistent"), raise_server_exceptions=False)
+    health = client.get("/health")
+    assert health.status_code == 503 and health.json()["falkordb"]["ping"] is False
+    for name, args in (("current_owner", {"system": "billing-api"}), ("what_leaves", {"person": "Oskar Alvarez", "depth": 4}),
+                       ("without", {"person": "Oskar Alvarez"})):
+        r = client.post(f"/v1/quillfield/tools/{name}", json=args)
+        assert r.status_code == 503, (name, r.status_code, r.text)
+        assert "rows" not in r.json() and "sentence" not in r.json()
+    assert client.get("/v1/quillfield/tools").status_code == 503
