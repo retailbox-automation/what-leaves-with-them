@@ -59,6 +59,7 @@ class TraceRow:
     params: dict
     ms: float
     rows: int
+    graph: str = ""  # empty for the tenant's graph, else the scratch graph the query ran on
 
 
 @dataclass
@@ -69,7 +70,7 @@ class Scratch:
     name: str
 
     def query(self, query: str, params: dict | None = None) -> list[list]:
-        return self.store._run(self.graph.query, query, params)
+        return self.store._run(self.graph.query, query, params, graph=self.name)
 
 
 @dataclass
@@ -87,10 +88,10 @@ class Store:
     def rw(self, query: str, params: dict | None = None) -> list[list]:
         return self._run(self.graph.query, query, params)
 
-    def _run(self, fn, query, params):
+    def _run(self, fn, query, params, graph: str = ""):
         t0 = time.perf_counter()
         rows = fn(query, params or {}).result_set
-        self.trace.append(TraceRow(query, params or {}, round((time.perf_counter() - t0) * 1000, 2), len(rows)))
+        self.trace.append(TraceRow(query, params or {}, round((time.perf_counter() - t0) * 1000, 2), len(rows), graph))
         return rows
 
     @contextmanager

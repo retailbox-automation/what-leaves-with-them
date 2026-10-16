@@ -83,6 +83,8 @@ Replaying the seed-42 company: 403 records, 226 gate decisions: ACCEPT 108, CONF
 
 Agents never write Cypher. They pick from a fixed catalogue of 21 tools, each a human-written, parameterised query; every name in the arguments is resolved against the graph first ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#tool-catalogue) has the whole catalogue with its queries). The same catalogue reaches the HTTP API, the MCP server and the agent. Three of the queries, copied from [honest_memory/departure.py](honest_memory/departure.py):
 
+**Run them yourself:** [queries/](queries/) holds the exact statements the departure tools run for the demo's leaver (what_leaves at depth 1 and 4, single_source, the WCC and betweenness projections, successors, promises, the handoff plan), each with its parameters in FalkorDB's `CYPHER name=value` header, so it pastes into FalkorDB Browser or `redis-cli GRAPH.QUERY`. The files are written from the tools' own traces by `scripts/export_queries.py`; `tests/test_queries.py` checks they have not drifted and runs every statement on both engines against its recorded row count.
+
 Depth 2 to 4: decisions the person made that govern systems others own, and what depends on those systems. `{k}` is depth minus 2, validated in code, because neither engine takes a variable-length bound as a parameter ([FalkorDB #3350](https://github.com/FalkorDB/FalkorDB/issues/3350)).
 
 ```python
@@ -292,6 +294,7 @@ The code, tests and docs in this repository were written with AI coding assistan
 |---|---|
 | [honest_memory/](honest_memory/) | the memory: write gate, ingest, tool catalogue, departure tools, agent, HTTP API, MCP server |
 | [web/](web/) | the one-page panel, static files over the HTTP API |
+| [queries/](queries/) | the departure tools' Cypher with parameters, generated from their traces and run by the tests |
 | [bench/](bench/) | the benchmark against plain retrieval |
 | [redteam/](redteam/) | the 36 attacks on the write gate and their report |
 | [examples/](examples/) | the departure walkthrough and the two-agent memory demo |
