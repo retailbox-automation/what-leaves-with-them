@@ -124,7 +124,7 @@ _BETWEENNESS = ("CALL algo.betweenness({nodeLabels: ['Person', 'Team', 'System']
 Full model and every record edge: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#graph-model).
 
 ```mermaid
-flowchart LR
+flowchart TD
   P[Person] -- OWNS / WORKED_ON --> S[System]
   P -- MEMBER_OF / LEADS --> T[Team]
   P -- DECIDED --> D[Decision]
